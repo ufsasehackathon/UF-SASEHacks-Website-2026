@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState, useCallback } from "react";
-import { getPublicImageUrl } from "@/lib/supabase/storage";
+import { getPublicImageUrl } from "@/lib/images";
 
 interface TeamMember {
   name: string;

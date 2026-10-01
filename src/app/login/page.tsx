@@ -1,6 +1,6 @@
 import SignInForm from "@/components/auth/SignInForm";
 import { HACK_NAME } from "@/lib/constants";
-import { getPublicImageUrl } from "@/lib/supabase/storage";
+import { getPublicImageUrl } from "@/lib/images";
 import Image from "next/image";
 
 export const dynamic = "force-dynamic";

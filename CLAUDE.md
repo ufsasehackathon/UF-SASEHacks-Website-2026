@@ -26,7 +26,7 @@ NOTION_API_KEY=
 NOTION_DB_ID=
 ```
 
-Database schema/RLS setup is not committed here — it lives in the Supabase project directly (tables: `profiles`, `registrations`; storage bucket: `resumes`, `images`).
+Database schema/RLS setup is not committed here — it lives in the Supabase project directly (tables: `profiles`, `registrations`; storage bucket: `resumes`).
 
 ## Architecture
 
@@ -45,7 +45,7 @@ Two main tables joined by user id:
 - `profiles` — personal/demographic info (name, contact, school, major, demographics, address, t-shirt, dietary, etc.), keyed by `id` = Supabase auth user id.
 - `registrations` — hackathon-specific state keyed by `user_id`: `status` (`pending`/`confirmed`/`waitlist`/`rejected`), `editing_locked`, consent flags (`accuracy_agreement`, `terms_and_conditions`, `code_of_conduct`, `can_photograph`, `share_resume_with_companies`, `mlh_code_of_conduct`, `mlh_data_sharing`, `mlh_communications`), and resume fields (`resume_url`, `resume_updated_at`).
 
-Resumes are stored in the `resumes` Supabase Storage bucket at the fixed path `{user_id}/resume.pdf` (always this exact filename — uploads use `upsert: true` to overwrite). Signed URLs are generated on demand (short-lived, 300s for single admin view, 3600s for bulk export) rather than using public URLs. General images (landing page assets) are in the public `images` bucket, accessed via `getPublicImageUrl()` in `src/lib/supabase/storage.ts`.
+Resumes are stored in the `resumes` Supabase Storage bucket at the fixed path `{user_id}/resume.pdf` (always this exact filename — uploads use `upsert: true` to overwrite). Signed URLs are generated on demand (short-lived, 300s for single admin view, 3600s for bulk export) rather than using public URLs. General images (landing page assets) are served locally from `public/images/`, referenced via `getPublicImageUrl()` in `src/lib/images.ts`.
 
 `ensureRows()` in `src/app/portal/actions.ts` lazily creates a user's `profiles`/`registrations` rows on first portal visit if they don't already exist (rather than doing it at signup time).
 

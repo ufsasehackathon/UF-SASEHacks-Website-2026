@@ -1,7 +1,7 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { getPublicImageUrl } from "@/lib/supabase/storage";
+import { getPublicImageUrl } from "@/lib/images";
 import Image from "next/image";
 
 export default async function AdminUserDetailPage({

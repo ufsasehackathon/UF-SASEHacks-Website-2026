@@ -5,7 +5,7 @@ import { gsap } from "gsap";
 import { Draggable } from "gsap/Draggable";
 import Image from "next/image";
 import { DATES, CITY, VENUE } from "@/lib/constants";
-import { getPublicImageUrl } from "@/lib/supabase/storage";
+import { getPublicImageUrl } from "@/lib/images";
 import FallingMascot from "@/components/FallingMascot";
 
 if (typeof window !== "undefined") {

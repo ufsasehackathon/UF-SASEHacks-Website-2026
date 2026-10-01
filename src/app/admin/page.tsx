@@ -1,7 +1,7 @@
 import { fetchAdminRows } from "./actions";
 import AdminTable from "@/components/admin/AdminTable";
 import DownloadAllResumes from "@/components/admin/DownloadAllResumes";
-import { getPublicImageUrl } from "@/lib/supabase/storage";
+import { getPublicImageUrl } from "@/lib/images";
 import Image from "next/image";
 
 export const dynamic = "force-dynamic";
