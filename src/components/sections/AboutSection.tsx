@@ -128,7 +128,7 @@ export default function AboutSection() {
         <div className="lg:col-span-5 order-2 lg:order-1 flex justify-center lg:justify-start -translate-y-90 md:-translate-y-150 lg:translate-y-0">
           <div className="bg-white/90 backdrop-blur-sm p-8 md:p-10 rounded-[3rem] shadow-2xl border-4 border-white transform -rotate-1 max-w-lg z-30">
             <p className="font-[family-name:var(--font-body)] text-[#560700] text-lg md:text-xl leading-relaxed font-medium">
-              SASEHacks is a 24 hour long hackathon where students make a project that
+              SASEHacks is a 36 hour long hackathon where students make a project that
               solves a real world problem, showcases their technical creativity, and brings their
               unique perspective to life through code.
             </p>

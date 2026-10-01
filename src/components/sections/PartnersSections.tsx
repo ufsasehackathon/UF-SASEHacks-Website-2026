@@ -129,7 +129,7 @@ export default function PartnersSections() {
                 "-1px -1px 0 #560700, 1px -1px 0 #560700, -1px 1px 0 #560700, 1px 1px 0 #560700",
             }}
           >
-            Shoutout to our amazing student organizations partners! Check out their websites by clicking on the cards.
+            Shoutout to last year&apos;s amazing student organization partners! Check out their websites by clicking on the cards.
           </p>
         </div>
       </div>

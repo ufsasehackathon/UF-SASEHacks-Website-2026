@@ -202,10 +202,10 @@ export default function SponsorsSection() {
         {/* Sponsors section */}
         <div className="mb-20 md:mb-32">
           <h2 ref={sponsorsTitleRef} className="font-[family-name:var(--font-heading)] text-white text-4xl md:text-6xl lg:text-7xl mb-4 text-center drop-shadow-lg uppercase">
-            SPONSORS
+            LAST YEAR&apos;S SPONSORS
           </h2>
           <p className="font-[family-name:var(--font-body)] text-white text-lg md:text-xl mb-12 text-center drop-shadow-md max-w-2xl mx-auto">
-            Thank you to our amazing sponsors who make SASEHacks possible!
+            Thank you to our amazing sponsors from last year who made SASEHacks possible!
           </p>
 
           <div 

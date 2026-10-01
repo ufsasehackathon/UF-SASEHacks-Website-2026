@@ -60,7 +60,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 Made with ❤️ by the SASEHacks Team
               </p>
               <p className="font-[family-name:var(--font-body)] text-[#560700]/60 text-md md:text-lg">
-                © 2026
+                © 2027
               </p>
               <a
                 href="https://github.com/MLH/mlh-policies/blob/main/code-of-conduct.md"

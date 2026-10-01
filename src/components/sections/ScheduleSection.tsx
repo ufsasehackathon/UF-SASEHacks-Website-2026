@@ -16,36 +16,17 @@ type ScheduleEvent = {
   color: string
 }
 
-const saturdayEvents: ScheduleEvent[] = [
-  { time: "8:00 AM", title: "Check-in", location: "WEIM 1064", color: "bg-[#FFE4B3]" },
-  { time: "9:00 AM", title: "Opening Ceremony", location: "WEIM 1064", color: "bg-[#BFDCFF]" },
-  { time: "9:45 AM", title: "Team Formation Social", location: "WEIM 1064", color: "bg-[#BFDCFF]" },
-  { time: "10:00 AM", title: "Hacking Begins", color: "bg-[#D0FFCB]" },
-  { time: "10:15 AM", title: "MLH's Github Co-Pilot & Google AI Workshop ", location: "WEIM 1076", color: "bg-[#FFC7E5]" },
-  { time: "12:00 PM", title: "Lunch - Dal Moros Pasta", location: "Newell", color: "bg-[#FFE4B3]" },
-  { time: "1:00 PM", title: "GatorAI's Intro to Neural Networks Workshop", location: "WEIM 1070", color: "bg-[#BFDCFF]" },
-  { time: "2:00 PM", title: "SHPE's React Based Component Libraries Workshop", location: "WEIM 1076", color: "bg-[#BFDCFF]" },
-  { time: "3:00 PM", title: "Lawn Social & TechTogether Networking", location: "WEIM 1070", color: "bg-[#FFC7E5]" },
-  { time: "4:00 PM", title: "WiCSE's Game Development Workshop", location: "WEIM 1076", color: "bg-[#D0FFCB]" },
-  { time: "5:00 PM", title: "SPCB's PC Building Workshop", location: "WEIM 1070", color: "bg-[#FFE4B3]" },
-  { time: "7:00 PM", title: "Dinner - Domino's Pizza", location: "Newell", color: "bg-[#BFDCFF]" },
-  { time: "8:00 PM", title: "Movie Social & Photobooth", location: "WEIM 1070", color: "bg-[#D0FFCB]" },
-]
-
-const sundayEvents: ScheduleEvent[] = [
-  { time: "12:00 AM", title: "Midnight Snack - Ramen Bar", location: "Newell", color: "bg-[#FFE4B3]" },
-  { time: "9:00 AM", title: "Breakfast - Bagel Spread", location: "Newell", color: "bg-[#BFDCFF]" },
-  { time: "10:00 AM", title: "Hacking Submission Deadline", color: "bg-[#FFC7E5]" },
-  { time: "12:30 AM", title: "Judging", location: "Marston 3rd Floor", color: "bg-[#D0FFCB]" },
-  { time: "1:45 PM", title: "Lunch - Grab & Go Sandwiches", location: "TUR L005", color: "bg-[#FFE4B3]" },
-  { time: "3:30 PM", title: "Closing Ceremony", location: "TUR L007", color: "bg-[#BFDCFF]" },
-]
+const DAYS = [
+  { id: "friday", label: "DAY 1", events: [] as ScheduleEvent[] },
+  { id: "saturday", label: "DAY 2", events: [] as ScheduleEvent[] },
+  { id: "sunday", label: "DAY 3", events: [] as ScheduleEvent[] },
+] as const
 
 export default function ScheduleSection() {
   const containerRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLHeadingElement>(null)
   const marqueeRef = useRef<HTMLDivElement>(null)
-  const [selectedDay, setSelectedDay] = useState<"saturday" | "sunday">("saturday")
+  const [selectedDay, setSelectedDay] = useState<(typeof DAYS)[number]["id"]>("friday")
 
   useEffect(() => {
     const ctx = gsap.context(() => {
@@ -78,7 +59,7 @@ export default function ScheduleSection() {
     return () => ctx.revert()
   }, [])
 
-  const events = selectedDay === "saturday" ? saturdayEvents : sundayEvents
+  const events: readonly ScheduleEvent[] = DAYS.find((d) => d.id === selectedDay)?.events ?? []
 
   return (
     <section id="schedule" ref={containerRef} className="w-full relative overflow-hidden bg-[#fec6e7]">
@@ -100,18 +81,18 @@ export default function ScheduleSection() {
         </h2>
 
         {/* Day Selector */}
-        <div className="flex justify-center gap-6 mb-12">
-          {(["saturday", "sunday"] as const).map((day) => (
+        <div className="flex justify-center gap-3 md:gap-6 mb-12">
+          {DAYS.map((day) => (
             <button
-              key={day}
-              onClick={() => setSelectedDay(day)}
-              className={`px-8 py-4 rounded-2xl font-[family-name:var(--font-heading)] text-xl md:text-2xl transition-all duration-300 shadow-xl border-4 ${
-                selectedDay === day
+              key={day.id}
+              onClick={() => setSelectedDay(day.id)}
+              className={`px-5 md:px-8 py-4 rounded-2xl font-[family-name:var(--font-heading)] text-xl md:text-2xl transition-all duration-300 shadow-xl border-4 ${
+                selectedDay === day.id
                   ? "bg-[#560700] text-[#FFE4B3] border-[#560700] scale-105"
                   : "bg-[#FFE4B3] text-[#560700] border-[#560700] hover:scale-105"
               }`}
             >
-              {day === "saturday" ? "DAY 1" : "DAY 2"}
+              {day.label}
             </button>
           ))}
         </div>
@@ -121,6 +102,14 @@ export default function ScheduleSection() {
           {/* Central Line */}
           <div className="absolute left-[6.5rem] md:left-32 top-0 bottom-0 w-1 bg-[#560700]/20" />
           
+          {events.length === 0 && (
+            <div className="bg-[#FFE4B3] rounded-2xl p-8 md:p-12 shadow-lg border-4 border-white text-center">
+              <h3 className="font-[family-name:var(--font-heading)] text-[#560700] text-3xl md:text-4xl">
+                Coming Soon
+              </h3>
+            </div>
+          )}
+
           <div className="space-y-6">
             {events.map((event, index) => (
               <div key={index} className="relative flex items-start gap-4 md:gap-8 group">

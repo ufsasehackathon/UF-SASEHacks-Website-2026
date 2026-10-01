@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { gsap } from "gsap";
 import { Draggable } from "gsap/Draggable";
 import Image from "next/image";
-import { DATES, CITY, DISCORD_INVITE, DEVPOST_URL, HACKER_GUIDE_URL } from "@/lib/constants";
+import { DATES, CITY, VENUE } from "@/lib/constants";
 import { getPublicImageUrl } from "@/lib/supabase/storage";
 import FallingMascot from "@/components/FallingMascot";
 
@@ -169,7 +169,7 @@ export default function HeroSection() {
         <div ref={contentRef} className="flex flex-col items-center text-center max-w-5xl">
           <div className="flex flex-wrap gap-3 justify-center mb-8">
             <div className="inline-flex items-center rounded-full bg-[#ebb8ce] text-[#560700] px-6 py-2 text-sm md:text-base font-[family-name:var(--font-body)] font-bold shadow-md uppercase border-2 border-[#560700]/10">
-              📍 {CITY}
+              📍 {VENUE}, {CITY}
             </div>
             <div className="inline-flex items-center rounded-full bg-white text-[#560700] px-6 py-2 text-sm md:text-base font-[family-name:var(--font-body)] font-bold shadow-md border-2 border-[#ebb8ce] uppercase">
               📅 {DATES}
@@ -177,7 +177,7 @@ export default function HeroSection() {
           </div>
 
           <p className="font-[family-name:var(--font-body)] text-[#560700] text-lg md:text-2xl mb-12 font-medium leading-relaxed max-w-3xl drop-shadow-sm">
-            Build something amazing in 24 hours. Meet new teammates, learn from mentors, and ship projects you&apos;ll be proud of!
+            Build something amazing in 36 hours. Meet new teammates, learn from mentors, and ship projects you&apos;ll be proud of!
           </p>
 
           <div className="flex flex-wrap gap-5 justify-center items-center w-full max-w-4xl">
@@ -197,30 +197,6 @@ export default function HeroSection() {
             >
               SIGN UP TO VOLUNTEER
             </a> */}
-            <a
-              href={DISCORD_INVITE}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center justify-center rounded-2xl px-8 py-4 font-[family-name:var(--font-heading)] text-xl md:text-2xl bg-white text-[#560700] hover:scale-105 transition-transform duration-300 shadow-xl border-4 border-[#ebb8ce] min-w-[200px]"
-            >
-              JOIN DISCORD
-            </a>
-            <a
-              href={DEVPOST_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center justify-center rounded-2xl px-8 py-4 font-[family-name:var(--font-heading)] text-xl md:text-2xl bg-white text-[#560700] hover:scale-105 transition-transform duration-300 shadow-xl border-4 border-[#ebb8ce] min-w-[200px]"
-            >
-              DEVPOST
-            </a>
-            <a
-              href={HACKER_GUIDE_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center justify-center rounded-2xl px-8 py-4 font-[family-name:var(--font-heading)] text-xl md:text-2xl bg-white text-[#560700] hover:scale-105 transition-transform duration-300 shadow-xl border-4 border-[#ebb8ce] min-w-[200px]"
-            >
-              HACKER GUIDE
-            </a>
           </div>
 
           {/* Scroll indicator */}

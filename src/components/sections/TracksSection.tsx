@@ -13,20 +13,7 @@ const DESCRIPTION_PREVIEW_LENGTH = 260;
 const MOBILE_DESCRIPTION_PREVIEW_LENGTH = 80;
 
 const allPrizes = [
-  { type: "Best Overall", name: "Best Overall", sponsor: "UF SASE", prize: "Mechanical Keyboard", desc: "Awarded to unparalleled excellence in a project's innovation and execution." },
-  { type: "Track", name: "Best Finance Project", sponsor: "UF SASE", prize: "JBL Speaker", desc: "Create a program that helps users manage money, improve financial literacy, or make informed financial decisions." },
-  { type: "Track", name: "Best Art Project", sponsor: "UF SASE", prize: "Botanical LEGO Set", desc: "Create a program that showcases creativity through design, media, or interactive art." },
-  { type: "Track", name: "Best Service Project", sponsor: "UF SASE", prize: "Owala Water Bottle", desc: "Create a program that helps people learn, stay organized, or improve their health and well-being." },
-  { type: "Track", name: "Best Gamification Project", sponsor: "AKIO AI", prize: "$40 STEAM gift card", desc: "Create a program that transforms a mundane task into an engaging and fun experience through gamification." },
-  { type: "Track", name: "Best AI Project", sponsor: "DSI", prize: "Brick (App Blocker)", desc: "Awarded to projects that demonstrate clear novelty and technical depth in AI/ML, with emphasis on non-trivial implementations and good coding conventions." },
-  { type: "Challenge", name: "Best Use of Blender", sponsor: "AKIO AI", prize: "Interview with AKIO AI", desc: "Design a compelling 3D character or animated sequence that demonstrates both artistic vision and technical execution in Blender. Strong submissions will feature high-quality modeling, clean topology, and expressive rigging or animation. We are looking for creators who can bring a character to life with unique personality and professional-grade attention to detail." },
-  { type: "Challenge", name: "Best Use of Roblox Studio", sponsor: "VuPlay", prize: "5K Robux", desc: "Build anything you want using Roblox Studio. We’re looking for the most engaging, creative, and fun experiences - whether it’s a game, system, or interactive world. Please make sure your code is available on a public github repository." },
-  { type: "Challenge", name: "Best Hack Built with Google Antigravity", sponsor: "MLH", prize: "Google Swag Kits", desc: "Google Antigravity is an agentic development platform, evolving the IDE into the agent-first era. Google Antigravity's Editor view offers tab autocompletion, natural language code commands, and a configurable, and context-aware configurable agent. We want you to leverage Google Antigravity to build your hack this weekend. Enjoy free usage of the latest models through a free for students Google AI Pro plan." },
-  { type: "Challenge", name: "Best Use of Gemini API", sponsor: "MLH", prize: "Google Swag Kits", desc: "It’s time to push the boundaries of what's possible with AI using Google Gemini. Check out the Gemini API to build AI-powered apps that make your friends say WHOA. So, what can Gemini do for your hackathon project? Understand language like a human and build a chatbot that gives personalized advice, analyze info like a supercomputer and create an app that summarizes complex research papers, and generate creative content like code, scripts, music, and more. Think of the possibilities… what will you build with the Google Gemini API this weekend?" },
-  { type: "Challenge", name: "Best Use of ElevenLabs", sponsor: "MLH", prize: "Wireless Earbuds", desc: "Deploy natural, human-sounding audio with ElevenLabs. Create realistic, dynamic, and emotionally expressive voices for any project, from interactive AI companions to narrated stories and voice-enabled apps. ElevenLabs will empower you to build rich, immersive experiences without the need for actors or complex audio production, using simply the power of AI. Integrate fully autonomous audio experiences into your hack with ElevenLabs and give your project a voice, along with giving your team the chance to win some wireless earbuds!" },
-  { type: "Challenge", name: "Best Use of Solana", sponsor: "MLH", prize: "Ledger Nano S Plus", desc: "The world of development is evolving fast and Solana is leading the charge with a network built to handle all of your infrastructure needs. Forget high fees and slow confirmations, it’s time to build applications that are fast, efficient, and scalable. Harness Solana's core advantages like blazing fast execution and near-zero transaction costs to make your hackathon ideas become real world projects. With Solana, the possibilities are endless." },
-  { type: "Challenge", name: "Best Use of Vultr", sponsor: "MLH", prize: "Portable Screens", desc: "Vultr empowers hackers to bring their high-performance projects to life instantly; providing everything from the speed of one-click deployment and scalable cloud compute, to specialized Vultr Cloud GPUs that can power AI-driven applications. We want you to push the limits of what can be built when infrastructure is no longer the bottleneck! Sign up for a Vultr account today and claim your free cloud credits! Take your next hack to the cloud with Vultr for a chance to win some awesome portable screens for you and your team!" },
-  { type: "Challenge", name: "Best Use of MongoDB Atlas", sponsor: "MLH", prize: "M5Stack IoT Kit", desc: "MongoDB Atlas takes the leading modern database and makes it accessible in the cloud! Get started with a $50 credit for students or sign up for the Atlas free forever tier (no credit card required). Along with a suite of services and functionalities, you'll have everything you need to manage all of your data, and you can get a headstart with free resources from MongoDB University! Build a hack using MongoDB Atlas for a chance to win a M5Stack IoT Kit for you and each member of your group." },
+  { type: "Tracks & Prizes", name: "Coming Soon", sponsor: "", prize: "", desc: "" },
 ];
 
 const ChevronLeft = () => (
@@ -125,6 +112,7 @@ export default function TracksSection() {
         {/* Nav Button Left */}
         <button
           onClick={handlePrev}
+          hidden={allPrizes.length < 2}
           className="z-50 p-2 sm:p-4 md:p-5 bg-white/20 hover:bg-white/40 backdrop-blur-md rounded-full text-[#560700] transition-transform hover:scale-110 shadow-lg border border-white/30 flex-shrink-0"
           aria-label="Previous Track"
         >
@@ -220,17 +208,17 @@ export default function TracksSection() {
                     <h3 className={`font-[family-name:var(--font-heading)] mb-2 sm:mb-4 px-2 leading-tight drop-shadow-sm w-full mx-auto break-words text-center ${isGamificationTitle ? "max-w-[84%] text-sm sm:text-lg md:text-2xl lg:text-3xl" : hasVeryLongTitle ? "max-w-[82%] text-sm sm:text-xl md:text-2xl lg:text-3xl" : hasVeryLongDescription ? "max-w-[90%] text-lg sm:text-2xl md:text-3xl lg:text-4xl" : "max-w-[90%] text-xl sm:text-3xl md:text-4xl lg:text-5xl"}`}>
                       {item.name}
                     </h3>
-                    <div className="flex flex-col gap-1 sm:gap-2 mb-2 sm:mb-5">
+                    {(item.sponsor || item.prize) && <div className="flex flex-col gap-1 sm:gap-2 mb-2 sm:mb-5">
                       <span className="text-[10px] sm:text-xs md:text-sm font-bold mix-blend-color-burn">Sponsor: {item.sponsor}</span>
                       <span className="text-[10px] sm:text-sm font-bold text-[#560700] bg-white/50 px-3 sm:px-4 py-1 sm:py-2 rounded-full inline-block backdrop-blur-md shadow-sm border border-white/60">
                         Prize: {item.prize}
                       </span>
-                    </div>
-                    <div className="max-w-[90%]">
+                    </div>}
+                    {item.desc && <div className="max-w-[90%]">
                       <p className="font-[family-name:var(--font-body)] text-[10px] sm:text-xs md:text-sm lg:text-base leading-snug sm:leading-relaxed px-4 sm:px-8 mix-blend-color-burn">
                         {descriptionText}
                       </p>
-                    </div>
+                    </div>}
                     {shouldTruncate && (
                       <button
                         type="button"
@@ -254,6 +242,7 @@ export default function TracksSection() {
         {/* Nav Button Right */}
         <button
           onClick={handleNext}
+          hidden={allPrizes.length < 2}
           className="z-50 p-2 sm:p-4 md:p-5 bg-white/20 hover:bg-white/40 backdrop-blur-md rounded-full text-[#560700] transition-transform hover:scale-110 shadow-lg border border-white/30 flex-shrink-0"
           aria-label="Next Track"
         >
