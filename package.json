@@ -9,17 +9,10 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@hookform/resolvers": "^5.2.2",
-    "@notionhq/client": "^2.2.15",
-    "@supabase/ssr": "^0.7.0",
-    "@supabase/supabase-js": "^2.57.4",
     "gsap": "^3.13.0",
-    "jszip": "^3.10.1",
     "next": "15.5.9",
     "react": "19.1.0",
-    "react-dom": "19.1.0",
-    "react-hook-form": "^7.65.0",
-    "zod": "^4.1.12"
+    "react-dom": "19.1.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

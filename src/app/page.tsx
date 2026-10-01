@@ -1,4 +1,4 @@
-import { fetchFaqFromNotion } from "@/lib/notion";
+import { FAQ_ITEMS } from "@/lib/faq";
 import HeroSection from "@/components/sections/HeroSection";
 import AboutSection from "@/components/sections/AboutSection";
 import TracksSection from "@/components/sections/TracksSection";
@@ -8,20 +8,7 @@ import SponsorsSection from "@/components/sections/SponsorsSection";
 import PartnersSections from "@/components/sections/PartnersSections";
 import FaqSection from "@/components/sections/FaqSection";
 
-async function getFaq() {
-  try {
-    const items = await fetchFaqFromNotion();
-    console.log("FAQ items loaded:", items.length);
-    return items;
-  } catch (error) {
-    console.error("Failed to load FAQ:", error);
-    return [];
-  }
-}
-
-export default async function Page() {
-  const faq = await getFaq();
-
+export default function Page() {
   return (
     <>
       <HeroSection />
@@ -31,7 +18,7 @@ export default async function Page() {
       <SponsorsSection />
       <TeamsSection />
       <PartnersSections />
-      <FaqSection faqItems={faq} />
+      <FaqSection faqItems={FAQ_ITEMS} />
     </>
   );
 }
