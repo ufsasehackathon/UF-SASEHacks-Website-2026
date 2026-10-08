@@ -22,11 +22,11 @@ const HACKING = "bg-[#D0FFCB]"
 const ACTIVITY = "bg-[#FFC7E5]"
 
 const fridayEvents: ScheduleEvent[] = [
-  { time: "5:30 PM", title: "Check-In", color: FOOD },
-  { time: "6:30 PM", title: "Opening Ceremony", color: CEREMONY },
-  { time: "7:45 PM", title: "Social", color: ACTIVITY },
-  { time: "7:45 PM", title: "Dinner", color: FOOD },
-  { time: "8:30 PM", title: "Hacking Begins", color: HACKING },
+  { time: "6:00 PM", title: "Check-In", color: FOOD },
+  { time: "7:00 PM", title: "Opening Ceremony", color: CEREMONY },
+  { time: "7:30 PM", title: "Social", color: ACTIVITY },
+  { time: "7:30 PM", title: "Dinner", color: FOOD },
+  { time: "8:00 PM", title: "Hacking Begins", color: HACKING },
 ]
 
 const saturdayEvents: ScheduleEvent[] = [
@@ -42,8 +42,8 @@ const saturdayEvents: ScheduleEvent[] = [
 ]
 
 const sundayEvents: ScheduleEvent[] = [
-  { time: "8:30 AM", title: "Hacking Ends", color: HACKING },
-  { time: "9:00 AM", title: "Breakfast", color: FOOD },
+  { time: "8:00 AM", title: "Hacking Ends", color: HACKING },
+  { time: "8:30 AM", title: "Breakfast", color: FOOD },
   { time: "11:00 AM", title: "Project Expo + Judging", color: HACKING },
   { time: "12:30 PM", title: "Lunch", color: FOOD },
   { time: "1:30 PM", title: "Judging Round 2", color: HACKING },
