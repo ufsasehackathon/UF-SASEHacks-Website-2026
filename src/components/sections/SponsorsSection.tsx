@@ -265,7 +265,7 @@ export default function SponsorsSection() {
               </p>
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                 <div className="flex-1 bg-[#BFDCFF] rounded-lg px-3 md:px-4 py-2 md:py-3 font-[family-name:var(--font-body)] text-[#560700] font-semibold text-center text-sm md:text-base break-all">
-                  ufsase.evp@gmail.com
+                  ufsase.hackathon@gmail.com
                 </div>
                 <button
                   onClick={copyEmail}

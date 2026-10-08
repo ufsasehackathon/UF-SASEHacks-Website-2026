@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useState, useEffect } from "react"
 import SignOutButton from "./auth/SignOutButton"
 import { User } from "@supabase/supabase-js"
+import { LOGIN_ENABLED } from "@/lib/constants"
 
 const MenuIcon = ({ size = 24 }: { size?: number }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -41,14 +42,12 @@ export default function HeaderClient({ user, showDashboard }: HeaderClientProps)
     { name: "Tracks", href: "/#tracks" },
     { name: "Schedule", href: "/#schedule" },
     { name: "Sponsors", href: "/#sponsors" },
-    { name: "Partners", href: "/#partners" },
-    { name: "Our Team", href: "/#teams" },
   ]
 
   const socialLinks = [
     {
       name: "Instagram",
-      href: "https://www.instagram.com/ufsase/",
+      href: "https://www.instagram.com/ufsasehacks/",
       icon: <InstagramIcon />
     },
   ]
@@ -57,7 +56,7 @@ export default function HeaderClient({ user, showDashboard }: HeaderClientProps)
     <header className="absolute top-0 left-0 right-0 z-50 px-4 pt-4">
       <div className="mx-auto max-w-[95%] lg:max-w-[1400px] bg-[#ebb8ce] rounded-full px-8 py-1.5 flex items-center justify-between shadow-md border border-[#560700]/10">
 
-        <Link href="/" className="ml-16 font-[family-name:var(--font-heading)] text-[#560700] text-xl md:text-2xl hover:opacity-80 transition-opacity">
+        <Link href="/" className="font-[family-name:var(--font-heading)] text-[#560700] text-xl md:text-2xl hover:opacity-80 transition-opacity">
           SASEHacks
         </Link>
 
@@ -97,7 +96,7 @@ export default function HeaderClient({ user, showDashboard }: HeaderClientProps)
                 <div>
                   <SignOutButton />
                 </div>
-              ) : (
+              ) : LOGIN_ENABLED && (
                 <Link href="/login" className="px-5 py-1.5 rounded-full text-xs font-black border border-[#560700] text-[#560700] hover:bg-[#560700] hover:text-[#FFE4B3] transition-all uppercase">
                   Login
                 </Link>
@@ -125,7 +124,7 @@ export default function HeaderClient({ user, showDashboard }: HeaderClientProps)
                 DASHBOARD
               </Link>
             )}
-            {mounted && !user && (
+            {mounted && !user && LOGIN_ENABLED && (
               <Link href="/login" className="text-[#560700] border-b border-[#560700]/5 pb-2" onClick={() => setMobileMenuOpen(false)}>
                 LOGIN
               </Link>

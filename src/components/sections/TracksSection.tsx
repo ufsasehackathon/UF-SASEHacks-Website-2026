@@ -107,7 +107,7 @@ export default function TracksSection() {
       </div>
 
       {/* --- Slider Container --- */}
-      <div className="relative z-30 flex items-center justify-between w-full max-w-[1400px] px-2 sm:px-8 md:px-16 mb-2 sm:mb-8 md:mb-32 shrink-0 mt-2 sm:mt-8 md:mt-0">
+      <div className={`relative z-30 flex items-center ${allPrizes.length < 2 ? "justify-center" : "justify-between"} w-full max-w-[1400px] px-2 sm:px-8 md:px-16 mb-2 sm:mb-8 md:mb-32 shrink-0 mt-2 sm:mt-8 md:mt-0`}>
 
         {/* Nav Button Left */}
         <button

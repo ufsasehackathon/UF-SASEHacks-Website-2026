@@ -16,10 +16,44 @@ type ScheduleEvent = {
   color: string
 }
 
+const FOOD = "bg-[#FFE4B3]"
+const CEREMONY = "bg-[#BFDCFF]"
+const HACKING = "bg-[#D0FFCB]"
+const ACTIVITY = "bg-[#FFC7E5]"
+
+const fridayEvents: ScheduleEvent[] = [
+  { time: "5:30 PM", title: "Check-In", color: FOOD },
+  { time: "6:30 PM", title: "Opening Ceremony", color: CEREMONY },
+  { time: "7:45 PM", title: "Social", color: ACTIVITY },
+  { time: "7:45 PM", title: "Dinner", color: FOOD },
+  { time: "8:30 PM", title: "Hacking Begins", color: HACKING },
+]
+
+const saturdayEvents: ScheduleEvent[] = [
+  { time: "9:00 AM", title: "Breakfast", color: FOOD },
+  { time: "10:00 AM", title: "Workshop 1", color: ACTIVITY },
+  { time: "11:00 AM", title: "Workshop 2", color: ACTIVITY },
+  { time: "12:00 PM", title: "Lunch", color: FOOD },
+  { time: "1:00 PM", title: "Workshop 3", color: ACTIVITY },
+  { time: "2:00 PM", title: "Career Fair", color: CEREMONY },
+  { time: "5:00 PM", title: "Workshop 4", color: ACTIVITY },
+  { time: "7:00 PM", title: "Dinner", color: FOOD },
+  { time: "8:30 PM", title: "Social", color: ACTIVITY },
+]
+
+const sundayEvents: ScheduleEvent[] = [
+  { time: "8:30 AM", title: "Hacking Ends", color: HACKING },
+  { time: "9:00 AM", title: "Breakfast", color: FOOD },
+  { time: "11:00 AM", title: "Project Expo + Judging", color: HACKING },
+  { time: "12:30 PM", title: "Lunch", color: FOOD },
+  { time: "1:30 PM", title: "Judging Round 2", color: HACKING },
+  { time: "4:00 PM", title: "Closing Ceremony", color: CEREMONY },
+]
+
 const DAYS = [
-  { id: "friday", label: "DAY 1", events: [] as ScheduleEvent[] },
-  { id: "saturday", label: "DAY 2", events: [] as ScheduleEvent[] },
-  { id: "sunday", label: "DAY 3", events: [] as ScheduleEvent[] },
+  { id: "friday", label: "DAY 1", events: fridayEvents },
+  { id: "saturday", label: "DAY 2", events: saturdayEvents },
+  { id: "sunday", label: "DAY 3", events: sundayEvents },
 ] as const
 
 export default function ScheduleSection() {
