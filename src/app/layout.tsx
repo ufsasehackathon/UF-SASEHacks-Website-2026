@@ -3,6 +3,7 @@ import "./globals.css";
 import { HACK_NAME, DATES, CITY, DOMAIN } from "@/lib/constants";
 import Header from "@/components/Header";
 import { Jersey_20, Inconsolata } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 
 const jersey20 = Jersey_20({
   weight: "400",
@@ -73,6 +74,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
           </div>
         </footer>
+        <Analytics />
       </body>
     </html>
   );

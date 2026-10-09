@@ -13,6 +13,7 @@
     "@notionhq/client": "^2.2.15",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.57.4",
+    "@vercel/analytics": "^2.0.1",
     "gsap": "^3.13.0",
     "jszip": "^3.10.1",
     "next": "15.5.9",
