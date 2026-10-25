@@ -7,6 +7,7 @@ import Image from "next/image";
 import { DATES, CITY, VENUE } from "@/lib/constants";
 import { getPublicImageUrl } from "@/lib/images";
 import FallingMascot from "@/components/FallingMascot";
+import MailingListForm from "@/components/MailingListForm";
 
 if (typeof window !== "undefined") {
   gsap.registerPlugin(Draggable)
@@ -167,7 +168,7 @@ export default function HeroSection() {
 
         {/* INFORMATION SECTION */}
         <div ref={contentRef} className="flex flex-col items-center text-center max-w-5xl">
-          <div className="flex flex-wrap gap-3 justify-center mb-8">
+          <div className="flex flex-wrap gap-3 justify-center mb-4">
             <div className="inline-flex items-center rounded-full bg-[#ebb8ce] text-[#560700] px-6 py-2 text-sm md:text-base font-[family-name:var(--font-body)] font-bold shadow-md uppercase border-2 border-[#560700]/10">
               📍 {VENUE}, {CITY}
             </div>
@@ -175,6 +176,8 @@ export default function HeroSection() {
               📅 {DATES}
             </div>
           </div>
+
+          <MailingListForm />
 
           <p className="font-[family-name:var(--font-body)] text-[#560700] text-lg md:text-2xl mb-12 font-medium leading-relaxed max-w-3xl drop-shadow-sm">
             Build something amazing in 36 hours. Meet new teammates, learn from mentors, and ship projects you&apos;ll be proud of!

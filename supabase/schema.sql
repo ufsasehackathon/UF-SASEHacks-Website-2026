@@ -99,6 +99,13 @@ create table if not exists public.attendance (
 
 insert into public.events (event_name) values ('Check-in') on conflict (event_name) do nothing;
 
+-- mailing list signups from the landing page (no account required)
+create table if not exists public.mailing_list (
+  id uuid primary key default gen_random_uuid(),
+  email text not null check (char_length(email) <= 320 and email ~* '^[^@\s]+@[^@\s]+\.[^@\s]+$'),
+  created_at timestamptz not null default now()
+);
+
 -- ===========
 -- FUNCTIONS
 -- ===========
@@ -232,6 +239,20 @@ $$;
 revoke all on function public.self_check_in(text) from public;
 grant execute on function public.self_check_in(text) to authenticated;
 
+-- keep-alive ping for the GitHub Actions cron (.github/workflows/supabase-keepalive.yml).
+-- Does a real read of mailing_list without exposing any emails to anon: returns only the row count.
+create or replace function public.keep_alive()
+returns bigint
+language sql
+security definer
+set search_path = public
+as $$
+  select count(*) from public.mailing_list;
+$$;
+
+revoke all on function public.keep_alive() from public;
+grant execute on function public.keep_alive() to anon, authenticated;
+
 -- ===========
 -- TRIGGERS
 -- ===========
@@ -274,6 +295,7 @@ alter table public.user_roles enable row level security;
 
 alter table public.events enable row level security;
 alter table public.attendance enable row level security;
+alter table public.mailing_list enable row level security;
 
 -- ================
 -- RLS - PROFILES
@@ -390,6 +412,25 @@ to authenticated
 using ( public.is_admin(auth.uid()) )
 with check ( public.is_admin(auth.uid()) );
 
+-- ======================
+-- RLS - MAILING LIST
+-- ======================
+-- anyone (signed in or not) can add an email; nobody but admins can read the list
+drop policy if exists "mailing_list_public_insert" on public.mailing_list;
+create policy "mailing_list_public_insert"
+on public.mailing_list
+for insert
+to anon, authenticated
+with check ( true );
+
+drop policy if exists "mailing_list_admin_all" on public.mailing_list;
+create policy "mailing_list_admin_all"
+on public.mailing_list
+for all
+to authenticated
+using ( public.is_admin(auth.uid()) )
+with check ( public.is_admin(auth.uid()) );
+
 -- ===========
 -- STORAGE RLS
 -- ===========
@@ -447,6 +488,7 @@ create index if not exists idx_profiles_email on public.profiles (lower(email));
 create index if not exists idx_registrations_status on public.registrations (status);
 create index if not exists idx_user_roles_user on public.user_roles (user_id);
 create index if not exists idx_attendance_event on public.attendance (event_id);
+create unique index if not exists idx_mailing_list_email on public.mailing_list (lower(email));
 
 -- Reload the API schema cache
 select pg_notify('pgrst', 'reload schema');

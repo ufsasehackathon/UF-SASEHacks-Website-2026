@@ -15,8 +15,13 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        # keep_alive() is a security-definer RPC that reads mailing_list (anon can't select it directly
+        # because of RLS) and returns only the row count. Defined in supabase/schema.sql.
         run: |
-          curl --fail --silent --show-error \
-            "$SUPABASE_URL/rest/v1/registrations?select=user_id&limit=1" \
+          count=$(curl --fail --silent --show-error -X POST \
+            "$SUPABASE_URL/rest/v1/rpc/keep_alive" \
             -H "apikey: $SUPABASE_ANON_KEY" \
-            -H "Authorization: Bearer $SUPABASE_ANON_KEY"
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+          echo "mailing_list rows: $count"
