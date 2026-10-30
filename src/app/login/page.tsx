@@ -61,7 +61,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
                           Sign In
                         </h2>
                         <p className="font-[family-name:var(--font-body)] text-sm text-gray-600">
-                          Enter your email to receive a magic link
+                          Sign in with Discord, or get an email link
                         </p>
                       </div>
 
@@ -69,7 +69,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
 
                       <div className="pt-4 border-t border-gray-200">
                         <p className="font-[family-name:var(--font-body)] text-xs text-gray-500 text-center">
-                          No password required. We&apos;ll send you a secure link to sign in.
+                          No password required.
                         </p>
                       </div>
                     </div>

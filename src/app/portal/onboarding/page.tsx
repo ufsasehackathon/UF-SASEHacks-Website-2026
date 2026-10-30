@@ -1,8 +1,8 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import OnboardingForm from "@/components/forms/OnboardingForm";
-import { upsertProfile, saveRegistrationFlags, uploadResumeOnboarding } from "../actions";
-import { HACK_NAME, REGISTRATIONS_OPEN } from "@/lib/constants";
+import { upsertProfile, saveRegistrationFlags, uploadResumeOnboarding, saveResponses, submitApplication, ensureRows } from "../actions";
+import { HACK_NAME, APPLICATIONS_CLOSE, registrationsOpen } from "@/lib/constants";
 
 export default async function OnboardingPage() {
   const supabase = await createSupabaseServerClient();
@@ -11,6 +11,8 @@ export default async function OnboardingPage() {
   if (!user) {
     redirect("/login");
   }
+
+  await ensureRows();
 
   // Check if user has already completed onboarding
   const { data: profile } = await supabase
@@ -21,18 +23,22 @@ export default async function OnboardingPage() {
 
   const { data: reg } = await supabase
     .from("registrations")
-    .select("accuracy_agreement, terms_and_conditions, code_of_conduct, can_photograph, editing_locked, share_resume_with_companies, mlh_code_of_conduct, mlh_data_sharing, mlh_communications")
+    .select("status, resume_url, responses, accuracy_agreement, terms_and_conditions, code_of_conduct, can_photograph, editing_locked, share_resume_with_companies, mlh_code_of_conduct, mlh_data_sharing, mlh_communications")
     .eq("user_id", user.id)
     .single();
 
-  // If profile is complete (has name and school), redirect to portal
-  // Check for new schema (first_name + last_name) or legacy (full_name)
-  const hasCompleteName = (profile?.first_name && profile?.last_name) || profile?.full_name;
-  if (hasCompleteName && profile?.school) {
+  // Already submitted: the portal shows status, and profile edits go through /portal/profile
+  if (reg && reg.status !== "draft") {
     redirect("/portal");
   }
 
   const locked = reg?.editing_locked ?? false;
+  const open = registrationsOpen();
+  const closesAt = new Date(APPLICATIONS_CLOSE).toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    dateStyle: "long",
+    timeStyle: "short",
+  });
 
   // Compute initial values for the new schema, with fallbacks from legacy data
   // Split full_name into first/last if we have legacy data
@@ -73,16 +79,16 @@ export default async function OnboardingPage() {
       <div className="absolute bottom-20 left-10 w-80 h-80 bg-[#ebb8ce] opacity-20 rounded-full blur-3xl"></div>
 
       <div className="relative z-10 mx-auto max-w-screen-lg px-4 py-10">
-        {!REGISTRATIONS_OPEN && (
+        {!open && (
           <div className="mb-8 rounded-xl bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 p-6">
             <div className="flex items-start gap-3">
               <svg className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4v.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <div className="font-[family-name:var(--font-body)]">
-                <p className="text-sm font-medium text-red-900 mb-1">Registrations Closed</p>
+                <p className="text-sm font-medium text-red-900 mb-1">Applications Closed</p>
                 <p className="text-sm text-red-700">
-                  We are no longer accepting new registrations at this time. Thank you for your interest in {HACK_NAME}!
+                  We aren&apos;t accepting applications right now. Thank you for your interest in {HACK_NAME}!
                 </p>
               </div>
             </div>
@@ -92,10 +98,10 @@ export default async function OnboardingPage() {
         {/* Header */}
         <div className="mb-8 pt-18 text-center">
           <h1 className="font-[family-name:var(--font-heading)] text-5xl md:text-6xl text-[#560700] mb-4">
-            Complete Registration
+            Apply to {HACK_NAME}
           </h1>
           <p className="font-[family-name:var(--font-body)] text-lg text-[#560700]/70 max-w-2xl mx-auto">
-            Welcome to {HACK_NAME}! Please complete your profile to finish your registration.
+            Fill out the application below and submit it before {closesAt} ET.
           </p>
           <div className="mt-6 flex justify-center">
             <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-[#560700]/10 border border-[#560700]/20">
@@ -152,7 +158,11 @@ export default async function OnboardingPage() {
         profileAction={upsertProfile}
         consentAction={saveRegistrationFlags}
         resumeAction={uploadResumeOnboarding}
-        disabled={locked || !REGISTRATIONS_OPEN}
+        responsesAction={saveResponses}
+        submitAction={submitApplication}
+        initialResponses={(reg?.responses as Record<string, string> | null) ?? {}}
+        hasResume={Boolean(reg?.resume_url)}
+        disabled={locked || !open}
       />
       </div>
     </div>

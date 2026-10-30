@@ -1,8 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { profileSchema, registrationFlagsSchema } from "@/lib/validation";
+import { profileSchema, registrationFlagsSchema, responsesSchema, APPLICATION_QUESTIONS } from "@/lib/validation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { saveResume } from "@/lib/resume";
+import { statusEmail, sendEmailBatch } from "@/lib/email";
+import { registrationsOpen } from "@/lib/constants";
 
 export async function ensureRows() {
   const supabase = await createSupabaseServerClient();
@@ -41,6 +44,9 @@ export async function ensureRows() {
   if (!reg) {
     await supabase.from("registrations").insert({ user_id: user.id });
   }
+
+  // Copy a linked Discord account onto the profile (covers both Discord login and linking later)
+  await supabase.rpc("sync_discord_profile");
 
   return { ok: true };
 }
@@ -163,66 +169,104 @@ export async function upsertProfileAndConsents(_: unknown, formData: FormData) {
   return { ok: true };
 }
 
-/** 10 MB */
-const MAX_BYTES = 10 * 1024 * 1024;
-
-/** Cheap PDF signature check: first 5 bytes should be "%PDF-" */
-function looksLikePdf(bytes: Uint8Array) {
-  if (bytes.length < 5) return false;
-  return (
-    bytes[0] === 0x25 && // %
-    bytes[1] === 0x50 && // P
-    bytes[2] === 0x44 && // D
-    bytes[3] === 0x46 && // F
-    bytes[4] === 0x2D    // -
-  );
-}
-
 export async function uploadResumeOnboarding(formData: FormData) {
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not authenticated" };
 
-  const file = formData.get("resume") as File | null;
-  if (!file) return { ok: false, error: "No file provided" };
-
-  // Basic validations
-  if (file.size === 0) return { ok: false, error: "Empty file" };
-  if (file.size > MAX_BYTES) return { ok: false, error: "File too large (max 10 MB)" };
-
-  const type = file.type?.toLowerCase() || "";
-  if (type && type !== "application/pdf") {
-    return { ok: false, error: "Only PDF files are allowed" };
-  }
-
-  // Inspect magic header
-  const buf = new Uint8Array(await file.arrayBuffer());
-  if (!looksLikePdf(buf)) {
-    return { ok: false, error: "Invalid PDF file (failed signature check)" };
-  }
-
-  const path = `${user.id}/resume.pdf`;
-  const bucket = supabase.storage.from("resumes");
-
-  // Upload (upsert)
-  const { error: uploadErr } = await bucket.upload(path, buf, {
-    contentType: "application/pdf",
-    upsert: true,
-  });
-  if (uploadErr) return { ok: false, error: uploadErr.message };
-
-  // Update DB record
-  const { error: updErr } = await supabase
-    .from("registrations")
-    .update({
-      resume_url: path,
-      resume_updated_at: new Date().toISOString(),
-    })
-    .eq("user_id", user.id);
-
-  if (updErr) return { ok: false, error: updErr.message };
+  const result = await saveResume(supabase, user.id, formData);
+  if (!result.ok) return result;
 
   revalidatePath("/portal/resume");
+  revalidatePath("/portal");
+  return { ok: true };
+}
+
+/** Save free-response answers (APPLICATION_QUESTIONS) into registrations.responses */
+export async function saveResponses(formData: FormData) {
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not authenticated" };
+
+  const values = Object.fromEntries(
+    APPLICATION_QUESTIONS.map(q => [q.id, String(formData.get(q.id) ?? "")])
+  );
+  const parsed = responsesSchema.safeParse(values);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message || "Please check your answers" };
+  }
+
+  // Merge so answers to questions that were since removed from the form are kept
+  const { data: reg } = await supabase
+    .from("registrations")
+    .select("responses")
+    .eq("user_id", user.id)
+    .single();
+
+  const { error } = await supabase
+    .from("registrations")
+    .update({ responses: { ...(reg?.responses ?? {}), ...parsed.data } })
+    .eq("user_id", user.id);
+
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+/**
+ * Email the caller about their current status (application received / RSVP) and mark it sent.
+ * Failures are logged, not surfaced: the admin email queue will retry anything unsent.
+ */
+async function emailOwnStatus(userId: string) {
+  const supabase = await createSupabaseServerClient();
+  const [{ data: reg }, { data: profile }] = await Promise.all([
+    supabase.from("registrations").select("status, rsvp_deadline, last_emailed_status").eq("user_id", userId).single(),
+    supabase.from("profiles").select("email, first_name").eq("id", userId).single(),
+  ]);
+  if (!reg || !profile?.email || reg.last_emailed_status === reg.status) return;
+
+  const msg = statusEmail(reg.status, {
+    firstName: profile.first_name,
+    rsvpDeadline: reg.rsvp_deadline,
+    previousEmailedStatus: reg.last_emailed_status,
+  });
+  if (!msg) return;
+
+  const sent = await sendEmailBatch([{ to: profile.email, ...msg }]);
+  if (!sent.ok) {
+    console.error("emailOwnStatus failed:", sent.error);
+    return;
+  }
+  await supabase.rpc("mark_own_status_emailed", { p_status: reg.status });
+}
+
+/** draft -> pending. Re-checks the deadline here and in the DB (submit_application). */
+export async function submitApplication() {
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not authenticated" };
+
+  if (!registrationsOpen()) return { ok: false, error: "Applications are closed" };
+
+  const { error } = await supabase.rpc("submit_application");
+  if (error) return { ok: false, error: error.message };
+
+  await emailOwnStatus(user.id);
+
+  revalidatePath("/portal");
+  return { ok: true };
+}
+
+/** Accepted hacker confirms (needs Discord linked) or declines; confirmed hacker can drop out */
+export async function rsvp(attending: boolean) {
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not authenticated" };
+
+  const { error } = await supabase.rpc("rsvp", { p_attending: attending });
+  if (error) return { ok: false, error: error.message };
+
+  await emailOwnStatus(user.id);
+
   revalidatePath("/portal");
   return { ok: true };
 }

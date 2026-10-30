@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import type { AdminRow } from "@/app/admin/actions";
 import { setStatus, setEditingLock, getSignedResumeLinks, deleteProfiles } from "@/app/admin/actions";
+import { registrationStatusLabels, type RegistrationStatus } from "@/lib/validation";
 
 export default function AdminTable({ rows }: { rows: AdminRow[] }) {
   const [selected, setSelected] = useState<string[]>([]);
@@ -40,10 +41,10 @@ export default function AdminTable({ rows }: { rows: AdminRow[] }) {
         <div className="ml-auto flex items-center gap-2">
           <button
             disabled={!selectedCount || busy}
-            onClick={() => run(() => setStatus(selected, "confirmed"))}
+            onClick={() => run(() => setStatus(selected, "accepted"))}
             className="rounded-md border px-3 py-1.5 text-sm bg-white hover:bg-gray-50 disabled:opacity-50"
           >
-            Confirm
+            Accept
           </button>
           <button
             disabled={!selectedCount || busy}
@@ -109,7 +110,7 @@ export default function AdminTable({ rows }: { rows: AdminRow[] }) {
         </div>
       </div>
 
-      <table className="min-w-[900px] w-full text-sm">
+      <table className="min-w-[1200px] w-full text-sm">
         <thead className="bg-gray-50 border-b">
           <tr className="text-left">
             <th className="px-3 py-2"><input type="checkbox" checked={allChecked} onChange={(e) => onToggleAll(e.target.checked)} /></th>
@@ -117,6 +118,10 @@ export default function AdminTable({ rows }: { rows: AdminRow[] }) {
             <th className="px-3 py-2">Email</th>
             <th className="px-3 py-2">School</th>
             <th className="px-3 py-2">Status</th>
+            <th className="px-3 py-2">Score</th>
+            <th className="px-3 py-2">Submitted</th>
+            <th className="px-3 py-2">Discord</th>
+            <th className="px-3 py-2">Emailed?</th>
             <th className="px-3 py-2">Locked?</th>
             <th className="px-3 py-2">Resume updated</th>
             <th className="px-3 py-2">User ID</th>
@@ -140,7 +145,18 @@ export default function AdminTable({ rows }: { rows: AdminRow[] }) {
               </td>
               <td className="px-3 py-2">{r.profiles?.email ?? "-"}</td>
               <td className="px-3 py-2">{r.profiles?.school ?? "-"}</td>
-              <td className="px-3 py-2">{r.status}</td>
+              <td className="px-3 py-2">
+                {registrationStatusLabels[r.status as RegistrationStatus] ?? r.status}
+                {r.status === "accepted" && r.rsvp_deadline && (
+                  <span className="block text-xs text-gray-500">RSVP by {new Date(r.rsvp_deadline).toLocaleDateString()}</span>
+                )}
+              </td>
+              <td className="px-3 py-2">{r.review_score ?? "-"}</td>
+              <td className="px-3 py-2">{r.submitted_at ? new Date(r.submitted_at).toLocaleDateString() : "-"}</td>
+              <td className="px-3 py-2">{r.profiles?.discord_username ?? "-"}</td>
+              <td className="px-3 py-2">
+                {r.status === "draft" ? "-" : r.last_emailed_status === r.status ? "Yes" : "Queued"}
+              </td>
               <td className="px-3 py-2">{r.editing_locked ? "Yes" : "No"}</td>
               <td className="px-3 py-2">
                 {r.resume_updated_at ? new Date(r.resume_updated_at).toLocaleString() : "-"}

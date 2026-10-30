@@ -19,6 +19,7 @@ import {
   ageOptions,
   majorOptions,
   majorLabels,
+  APPLICATION_QUESTIONS,
 } from "@/lib/validation";
 import { searchSchools } from "@/lib/mlh-schools";
 import { searchCountries } from "@/lib/countries";
@@ -39,6 +40,11 @@ type Props = {
   profileAction: (state: unknown, formData: FormData) => Promise<{ ok: boolean; error?: string }>;
   consentAction: (state: unknown, formData: FormData) => Promise<{ ok: boolean; error?: string }>;
   resumeAction: (formData: FormData) => Promise<{ ok: boolean; error?: string }>;
+  responsesAction: (formData: FormData) => Promise<{ ok: boolean; error?: string }>;
+  submitAction: () => Promise<{ ok: boolean; error?: string }>;
+  initialResponses: Record<string, string>;
+  /** a resume is already on file, so picking a new one is optional */
+  hasResume: boolean;
   disabled?: boolean;
 };
 
@@ -48,6 +54,10 @@ export default function OnboardingForm({
   profileAction,
   consentAction,
   resumeAction,
+  responsesAction,
+  submitAction,
+  initialResponses,
+  hasResume,
   disabled
 }: Props) {
   const router = useRouter();
@@ -62,6 +72,9 @@ export default function OnboardingForm({
   const [mlhDataSharing, setMlhDataSharing] = useState(initialConsents.mlh_data_sharing);
   const [mlhCommunications, setMlhCommunications] = useState(initialConsents.mlh_communications);
   const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [responses, setResponses] = useState<Record<string, string>>(() =>
+    Object.fromEntries(APPLICATION_QUESTIONS.map(q => [q.id, initialResponses[q.id] ?? ""]))
+  );
 
   // School autocomplete state
   const [schoolQuery, setSchoolQuery] = useState(initialProfile.school);
@@ -90,8 +103,8 @@ export default function OnboardingForm({
       return;
     }
 
-    // Validate resume
-    if (!resumeFile) {
+    // Validate resume (required, but one already on file counts)
+    if (!resumeFile && !hasResume) {
       setServerMsg("You must upload a resume to continue.");
       setIsSubmitting(false);
       return;
@@ -134,18 +147,39 @@ export default function OnboardingForm({
       }
 
       // Upload resume
-      const resumeFd = new FormData();
-      resumeFd.append("resume", resumeFile);
+      if (resumeFile) {
+        const resumeFd = new FormData();
+        resumeFd.append("resume", resumeFile);
 
-      const resumeResult = await resumeAction(resumeFd);
-      if (!resumeResult.ok) {
-        setServerMsg(resumeResult.error ?? "Failed to upload resume");
+        const resumeResult = await resumeAction(resumeFd);
+        if (!resumeResult.ok) {
+          setServerMsg(resumeResult.error ?? "Failed to upload resume");
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      // Save free-response answers
+      const responsesFd = new FormData();
+      Object.entries(responses).forEach(([k, v]) => responsesFd.append(k, v));
+      const responsesResult = await responsesAction(responsesFd);
+      if (!responsesResult.ok) {
+        setServerMsg(responsesResult.error ?? "Failed to save your answers");
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Submit: draft -> pending
+      const submitResult = await submitAction();
+      if (!submitResult.ok) {
+        setServerMsg(submitResult.error ?? "Failed to submit application");
         setIsSubmitting(false);
         return;
       }
 
       // Success! Redirect to portal
       router.push("/portal");
+      router.refresh();
     } catch {
       setServerMsg("An error occurred. Please try again.");
       setIsSubmitting(false);
@@ -186,12 +220,17 @@ export default function OnboardingForm({
           </label>
 
           <label className="block">
-            <span className="text-sm font-medium">Email</span>
+            <span className="text-sm font-medium">Email *</span>
             <input
-              className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-gray-100"
-              readOnly
+              type="email"
+              className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+              disabled={disabled}
               {...form.register("email")}
             />
+            <p className="text-xs text-gray-500 mt-1">We&apos;ll send your application decision here.</p>
+            {form.formState.errors.email && (
+              <p className="text-xs text-red-600 mt-1">{form.formState.errors.email.message}</p>
+            )}
           </label>
 
           <label className="block">
@@ -539,7 +578,9 @@ export default function OnboardingForm({
 
         <div>
           <label className="block">
-            <span className="text-sm font-medium">Upload your resume (PDF only) *</span>
+            <span className="text-sm font-medium">
+              {hasResume ? "Replace your resume (optional, PDF only)" : "Upload your resume (PDF only) *"}
+            </span>
             <input
               type="file"
               accept=".pdf,application/pdf"
@@ -559,12 +600,45 @@ export default function OnboardingForm({
               Selected: {resumeFile.name} ({(resumeFile.size / 1024).toFixed(1)} KB)
             </p>
           )}
+          {hasResume && !resumeFile && (
+            <p className="mt-2 text-xs text-green-600">You already have a resume on file.</p>
+          )}
           <p className="mt-2 text-xs text-gray-500">
             Maximum file size: 10 MB
           </p>
         </div>
         </div>
       </div>
+
+      {/* Free-response questions (configured in APPLICATION_QUESTIONS) */}
+      {APPLICATION_QUESTIONS.length > 0 && (
+        <div className="relative">
+          <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-[#560700] to-[#ff9b5e] opacity-10 blur-xl"></div>
+          <div className="relative bg-white rounded-3xl shadow-xl border border-[#FFE4B3]/30 p-6 md:p-8 space-y-4">
+            <h2 className="font-[family-name:var(--font-heading)] text-2xl md:text-3xl text-[#560700]">A Little About You</h2>
+
+            {APPLICATION_QUESTIONS.map(q => (
+              <label key={q.id} className="block">
+                <span className="text-sm font-medium">
+                  {q.label} {q.required ? "*" : "(optional)"}
+                </span>
+                <textarea
+                  className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+                  rows={4}
+                  maxLength={q.maxLength}
+                  disabled={disabled}
+                  placeholder={q.placeholder}
+                  value={responses[q.id] ?? ""}
+                  onChange={(e) => setResponses(prev => ({ ...prev, [q.id]: e.target.value }))}
+                />
+                <p className="text-xs text-gray-500 mt-1 text-right">
+                  {(responses[q.id] ?? "").length}/{q.maxLength}
+                </p>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Demographics */}
       <div className="relative">
@@ -797,7 +871,7 @@ export default function OnboardingForm({
           disabled={disabled || isSubmitting}
           className="inline-flex items-center justify-center rounded-lg px-6 py-3 text-sm font-medium border bg-black text-white border-black hover:opacity-90 disabled:opacity-50"
         >
-          {isSubmitting ? "Submitting..." : "Complete Registration"}
+          {isSubmitting ? "Submitting..." : "Submit Application"}
         </button>
         {serverMsg && <span className="text-sm text-red-600">{serverMsg}</span>}
       </div>

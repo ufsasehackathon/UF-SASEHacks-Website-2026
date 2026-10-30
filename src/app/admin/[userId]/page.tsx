@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getPublicImageUrl } from "@/lib/images";
 import Image from "next/image";
+import ReviewForm from "@/components/admin/ReviewForm";
+import { APPLICATION_QUESTIONS, registrationStatusLabels, type RegistrationStatus } from "@/lib/validation";
 
 export default async function AdminUserDetailPage({
   params,
@@ -45,9 +47,12 @@ export default async function AdminUserDetailPage({
 
   const getStatusColor = (status: string) => {
     switch (status) {
+      case "accepted":
       case "confirmed": return "bg-green-100 text-green-700 border-green-300";
       case "waitlist": return "bg-yellow-100 text-yellow-700 border-yellow-300";
       case "rejected": return "bg-red-100 text-red-700 border-red-300";
+      case "draft":
+      case "declined": return "bg-gray-100 text-gray-700 border-gray-300";
       default: return "bg-blue-100 text-blue-700 border-blue-300";
     }
   };
@@ -116,14 +121,47 @@ export default async function AdminUserDetailPage({
             </div>
 
             <div>
-              <span className={`inline-flex items-center rounded-2xl px-5 py-2 text-sm font-semibold border-2 ${getStatusColor(registration?.status || "pending")}`}>
-                {registration?.status?.toUpperCase() || "PENDING"}
+              <span className={`inline-flex items-center rounded-2xl px-5 py-2 text-sm font-semibold border-2 ${getStatusColor(registration?.status || "draft")}`}>
+                {(registrationStatusLabels[registration?.status as RegistrationStatus] ?? registration?.status ?? "Not submitted").toUpperCase()}
               </span>
             </div>
           </div>
         </div>
 
         <div className="space-y-6">
+          {/* Review */}
+          <div className="relative">
+            <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-[#560700] to-[#ff9b5e] opacity-20 blur-xl"></div>
+            <div className="relative backdrop-blur-xl bg-white/95 rounded-3xl shadow-xl border border-[#FFE4B3]/30 p-6 md:p-8">
+              <h2 className="font-[family-name:var(--font-heading)] text-2xl md:text-3xl text-[#560700] mb-4">Review</h2>
+              <ReviewForm
+                userId={userId}
+                initialScore={registration?.review_score ?? null}
+                initialNotes={registration?.notes ?? null}
+              />
+            </div>
+          </div>
+
+          {/* Free-response answers (APPLICATION_QUESTIONS) */}
+          {APPLICATION_QUESTIONS.length > 0 && (
+            <div className="relative">
+              <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-[#BFDCFF] to-[#D0FFCB] opacity-20 blur-xl"></div>
+              <div className="relative backdrop-blur-xl bg-white/95 rounded-3xl shadow-xl border border-[#FFE4B3]/30 p-6 md:p-8">
+                <h2 className="font-[family-name:var(--font-heading)] text-2xl md:text-3xl text-[#560700] mb-4">Responses</h2>
+                <div className="space-y-4">
+                  {APPLICATION_QUESTIONS.map(q => (
+                    <div key={q.id}>
+                      <label className="font-[family-name:var(--font-body)] text-sm font-semibold text-gray-600">{q.label}</label>
+                      <p className="font-[family-name:var(--font-body)] text-sm mt-1 whitespace-pre-wrap">
+                        {(registration?.responses as Record<string, string> | null)?.[q.id] || "-"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Personal Information */}
           <div className="relative">
             <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-[#560700] to-[#ff9b5e] opacity-10 blur-xl"></div>
@@ -158,6 +196,13 @@ export default async function AdminUserDetailPage({
                     {profile.linkedin_url}
                   </a>
                 ) : "-"}
+              </p>
+            </div>
+            <div>
+              <label className="font-[family-name:var(--font-body)] text-sm font-semibold text-gray-600">Discord</label>
+              <p className="font-[family-name:var(--font-body)] text-sm mt-1">
+                {profile.discord_username || "Not connected"}
+                {profile.discord_id && <span className="text-gray-500"> ({profile.discord_id})</span>}
               </p>
             </div>
             {profile.date_of_birth && (
@@ -307,9 +352,24 @@ export default async function AdminUserDetailPage({
               <label className="text-sm font-medium text-gray-600">Status</label>
               <p className="text-sm">
                 <span className="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700">
-                  {registration?.status || "pending"}
+                  {registration?.status || "draft"}
                 </span>
               </p>
+            </div>
+            {[
+              ["Submitted", registration?.submitted_at],
+              ["Accepted", registration?.accepted_at],
+              ["RSVP Deadline", registration?.rsvp_deadline],
+              ["RSVP'd", registration?.rsvp_at],
+            ].map(([label, value]) => value ? (
+              <div key={label}>
+                <label className="text-sm font-medium text-gray-600">{label}</label>
+                <p className="text-sm">{new Date(value).toLocaleString()}</p>
+              </div>
+            ) : null)}
+            <div>
+              <label className="text-sm font-medium text-gray-600">Last Emailed About</label>
+              <p className="text-sm">{registration?.last_emailed_status || "-"}</p>
             </div>
             <div>
               <label className="text-sm font-medium text-gray-600">Editing Locked</label>

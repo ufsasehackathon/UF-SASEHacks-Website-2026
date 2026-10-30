@@ -225,3 +225,58 @@ export const registrationFlagsSchema = z.object({
   mlh_communications: z.boolean().default(false),
 });
 export type RegistrationFlagsValues = z.infer<typeof registrationFlagsSchema>;
+
+/**
+ * Free-response application questions. To add or remove a question, edit this list only:
+ * answers live in registrations.responses (jsonb) keyed by `id`, and the form, validation,
+ * admin detail page and CSV export all read from here. Removing a question hides its old
+ * answers but keeps them in the database. Don't reuse an old `id` for a different question.
+ */
+export const APPLICATION_QUESTIONS = [
+  {
+    id: "build_or_learn",
+    label: "What do you want to build or learn at SASEHacks?",
+    placeholder: "A project idea, a technology you want to try, people you want to meet...",
+    required: false,
+    maxLength: 500,
+  },
+] as const satisfies readonly {
+  id: string;
+  label: string;
+  placeholder?: string;
+  required: boolean;
+  maxLength: number;
+}[];
+
+export type ApplicationResponses = Record<string, string>;
+
+export const responsesSchema = z.object(
+  Object.fromEntries(
+    APPLICATION_QUESTIONS.map(q => {
+      const base = z.string().trim().max(q.maxLength, `Please keep this under ${q.maxLength} characters`);
+      return [q.id, q.required ? base.min(1, "This question is required") : base.optional().default("")];
+    })
+  )
+);
+
+/** Every registration status, in lifecycle order */
+export const registrationStatuses = [
+  "draft",
+  "pending",
+  "accepted",
+  "confirmed",
+  "declined",
+  "waitlist",
+  "rejected",
+] as const;
+export type RegistrationStatus = typeof registrationStatuses[number];
+
+export const registrationStatusLabels: Record<RegistrationStatus, string> = {
+  draft: "Not submitted",
+  pending: "Under review",
+  accepted: "Accepted (awaiting RSVP)",
+  confirmed: "Confirmed attending",
+  declined: "Declined",
+  waitlist: "Waitlisted",
+  rejected: "Rejected",
+};

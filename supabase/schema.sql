@@ -42,11 +42,14 @@ create table if not exists public.profiles (
   last_name text,
   linkedin_url text
 );
+-- Discord account, filled by sync_discord_profile() after a Discord login or link
+alter table public.profiles add column if not exists discord_id text;
+alter table public.profiles add column if not exists discord_username text;
 
 -- registrations
 create table if not exists public.registrations (
   user_id uuid primary key references public.profiles(id) on delete cascade,
-  status text not null default 'pending',
+  status text not null default 'draft',
   accuracy_agreement boolean default false,
   terms_and_conditions boolean default false,
   code_of_conduct boolean default false,
@@ -63,6 +66,27 @@ create table if not exists public.registrations (
   mlh_communications boolean default false,
   share_resume_with_companies boolean default false
 );
+
+-- application lifecycle (draft -> pending -> accepted -> confirmed/declined, or waitlist/rejected)
+alter table public.registrations add column if not exists submitted_at timestamptz;
+alter table public.registrations add column if not exists accepted_at timestamptz;
+alter table public.registrations add column if not exists rsvp_deadline timestamptz;
+alter table public.registrations add column if not exists rsvp_at timestamptz;
+alter table public.registrations add column if not exists review_score smallint;
+alter table public.registrations add column if not exists reviewed_by uuid references auth.users(id) on delete set null;
+alter table public.registrations add column if not exists last_emailed_status text;
+-- free-response answers keyed by question id (APPLICATION_QUESTIONS in src/lib/validation.ts)
+alter table public.registrations add column if not exists responses jsonb not null default '{}'::jsonb;
+
+alter table public.registrations alter column status set default 'draft';
+
+alter table public.registrations drop constraint if exists registrations_status_check;
+alter table public.registrations add constraint registrations_status_check
+  check (status in ('draft','pending','accepted','confirmed','declined','waitlist','rejected'));
+
+alter table public.registrations drop constraint if exists registrations_review_score_check;
+alter table public.registrations add constraint registrations_review_score_check
+  check (review_score is null or review_score between 1 and 5);
 
 -- user_roles
 create table if not exists public.user_roles (
@@ -98,6 +122,14 @@ create table if not exists public.attendance (
 );
 
 insert into public.events (event_name) values ('Check-in') on conflict (event_name) do nothing;
+
+-- single-row app settings read by the RPCs below. Keep applications_close in sync with
+-- APPLICATIONS_CLOSE in src/lib/constants.ts (the app uses that one for display).
+create table if not exists public.settings (
+  id boolean primary key default true check (id),
+  applications_close timestamptz not null default '2027-02-01 23:59:00-05'
+);
+insert into public.settings (id) values (true) on conflict (id) do nothing;
 
 -- mailing list signups from the landing page (no account required)
 create table if not exists public.mailing_list (
@@ -137,6 +169,15 @@ $$;
 -- Security guards. They only restrict callers that have a JWT (auth.uid() is not null) and are
 -- not admins. The SQL editor, the service role and other server-side connections have
 -- auth.uid() = null and are unaffected.
+-- The hacker-facing RPCs (submit_application, rsvp, sync_discord_profile) still run with the
+-- caller's JWT, so they set the transaction-local flag sasehacks.bypass_guard to get past them.
+create or replace function public.guard_bypassed()
+returns boolean
+language sql
+stable
+as $$
+  select coalesce(current_setting('sasehacks.bypass_guard', true), '') = 'on';
+$$;
 
 -- registrations: non-admins can't change admin-controlled columns
 create or replace function public.guard_registration_admin_cols()
@@ -146,11 +187,18 @@ security definer
 set search_path = public
 as $$
 begin
-  if auth.uid() is not null and not public.is_admin(auth.uid()) then
+  if auth.uid() is not null and not public.guard_bypassed() and not public.is_admin(auth.uid()) then
     if new.status is distinct from old.status
        or new.editing_locked is distinct from old.editing_locked
        or new.notes is distinct from old.notes
-       or new.user_id is distinct from old.user_id then
+       or new.user_id is distinct from old.user_id
+       or new.submitted_at is distinct from old.submitted_at
+       or new.accepted_at is distinct from old.accepted_at
+       or new.rsvp_deadline is distinct from old.rsvp_deadline
+       or new.rsvp_at is distinct from old.rsvp_at
+       or new.review_score is distinct from old.review_score
+       or new.reviewed_by is distinct from old.reviewed_by
+       or new.last_emailed_status is distinct from old.last_emailed_status then
       raise exception 'Not allowed to change admin-controlled registration fields'
         using errcode = '42501';
     end if;
@@ -159,7 +207,7 @@ begin
 end
 $$;
 
--- registrations: rows created by non-admins always start pending/unlocked
+-- registrations: rows created by non-admins always start as an unlocked draft
 -- (forces defaults instead of raising, so the portal's ensureRows keeps working)
 create or replace function public.guard_registration_insert()
 returns trigger
@@ -169,15 +217,22 @@ set search_path = public
 as $$
 begin
   if auth.uid() is not null and not public.is_admin(auth.uid()) then
-    new.status := 'pending';
+    new.status := 'draft';
     new.editing_locked := false;
     new.notes := null;
+    new.submitted_at := null;
+    new.accepted_at := null;
+    new.rsvp_deadline := null;
+    new.rsvp_at := null;
+    new.review_score := null;
+    new.reviewed_by := null;
+    new.last_emailed_status := null;
   end if;
   return new;
 end
 $$;
 
--- profiles: enforce editing_locked server-side
+-- profiles: enforce editing_locked server-side; Discord fields only change via sync_discord_profile
 create or replace function public.guard_profile_locked()
 returns trigger
 language plpgsql
@@ -185,8 +240,14 @@ security definer
 set search_path = public
 as $$
 begin
-  if auth.uid() is not null and not public.is_admin(auth.uid()) then
-    if exists (
+  if auth.uid() is not null and not public.guard_bypassed() and not public.is_admin(auth.uid()) then
+    if (tg_op = 'INSERT' and (new.discord_id is not null or new.discord_username is not null))
+       or (tg_op = 'UPDATE' and (new.discord_id is distinct from old.discord_id
+                                 or new.discord_username is distinct from old.discord_username)) then
+      raise exception 'Discord account can only be set by linking Discord'
+        using errcode = '42501';
+    end if;
+    if tg_op = 'UPDATE' and exists (
       select 1 from public.registrations r
       where r.user_id = old.id and r.editing_locked
     ) then
@@ -239,6 +300,172 @@ $$;
 revoke all on function public.self_check_in(text) from public;
 grant execute on function public.self_check_in(text) to authenticated;
 
+-- Submit the caller's application: draft -> pending. Checks the deadline, the required
+-- consents and that a resume is on file. Profile completeness is validated app-side.
+create or replace function public.submit_application()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_reg public.registrations;
+begin
+  if v_uid is null then
+    raise exception 'Not authenticated' using errcode = '28000';
+  end if;
+
+  select * into v_reg from public.registrations where user_id = v_uid for update;
+  if not found then
+    raise exception 'No application found';
+  end if;
+  if v_reg.status <> 'draft' then
+    raise exception 'Application already submitted';
+  end if;
+  if now() > (select applications_close from public.settings where id) then
+    raise exception 'Applications are closed';
+  end if;
+  if not (coalesce(v_reg.accuracy_agreement, false) and coalesce(v_reg.terms_and_conditions, false)
+          and coalesce(v_reg.code_of_conduct, false) and coalesce(v_reg.mlh_code_of_conduct, false)
+          and coalesce(v_reg.mlh_data_sharing, false)) then
+    raise exception 'All required agreements must be accepted';
+  end if;
+  if v_reg.resume_url is null then
+    raise exception 'A resume is required';
+  end if;
+
+  perform set_config('sasehacks.bypass_guard', 'on', true);
+  update public.registrations
+  set status = 'pending', submitted_at = now()
+  where user_id = v_uid;
+  perform set_config('sasehacks.bypass_guard', 'off', true);
+end
+$$;
+
+revoke all on function public.submit_application() from public;
+grant execute on function public.submit_application() to authenticated;
+
+-- RSVP for an accepted hacker. accepted -> confirmed/declined before rsvp_deadline;
+-- confirmed -> declined any time (dropping out). Confirming requires a linked Discord account.
+-- Returns the new status.
+create or replace function public.rsvp(p_attending boolean)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_reg public.registrations;
+  v_new text;
+begin
+  if v_uid is null then
+    raise exception 'Not authenticated' using errcode = '28000';
+  end if;
+
+  select * into v_reg from public.registrations where user_id = v_uid for update;
+  if not found then
+    raise exception 'No application found';
+  end if;
+
+  if v_reg.status = 'accepted' then
+    if v_reg.rsvp_deadline is not null and now() > v_reg.rsvp_deadline then
+      raise exception 'The RSVP deadline has passed';
+    end if;
+    if p_attending and not exists (
+      select 1 from auth.identities i where i.user_id = v_uid and i.provider = 'discord'
+    ) then
+      raise exception 'Connect your Discord account before confirming';
+    end if;
+    v_new := case when p_attending then 'confirmed' else 'declined' end;
+  elsif v_reg.status = 'confirmed' and not p_attending then
+    v_new := 'declined';
+  else
+    raise exception 'Nothing to RSVP for';
+  end if;
+
+  perform set_config('sasehacks.bypass_guard', 'on', true);
+  update public.registrations
+  set status = v_new, rsvp_at = now()
+  where user_id = v_uid;
+  perform set_config('sasehacks.bypass_guard', 'off', true);
+
+  return v_new;
+end
+$$;
+
+revoke all on function public.rsvp(boolean) from public;
+grant execute on function public.rsvp(boolean) to authenticated;
+
+-- Copy the caller's linked Discord identity (if any) onto their profile.
+-- Returns the Discord username, or null when no Discord account is linked.
+create or replace function public.sync_discord_profile()
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_id text;
+  v_username text;
+begin
+  if v_uid is null then
+    raise exception 'Not authenticated' using errcode = '28000';
+  end if;
+
+  select i.provider_id,
+         coalesce(i.identity_data->>'name', i.identity_data->>'full_name',
+                  i.identity_data->'custom_claims'->>'global_name')
+    into v_id, v_username
+  from auth.identities i
+  where i.user_id = v_uid and i.provider = 'discord'
+  order by i.created_at desc
+  limit 1;
+
+  if v_id is null then
+    return null;
+  end if;
+
+  perform set_config('sasehacks.bypass_guard', 'on', true);
+  update public.profiles
+  set discord_id = v_id, discord_username = v_username
+  where id = v_uid
+    and (discord_id is distinct from v_id or discord_username is distinct from v_username);
+  perform set_config('sasehacks.bypass_guard', 'off', true);
+
+  return v_username;
+end
+$$;
+
+revoke all on function public.sync_discord_profile() from public;
+grant execute on function public.sync_discord_profile() to authenticated;
+
+-- After the app emails a hacker about their own status change (application received, RSVP),
+-- record it so the admin "send pending emails" queue doesn't send it again. Worst case a user
+-- can only suppress their own email.
+create or replace function public.mark_own_status_emailed(p_status text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Not authenticated' using errcode = '28000';
+  end if;
+  perform set_config('sasehacks.bypass_guard', 'on', true);
+  update public.registrations
+  set last_emailed_status = p_status
+  where user_id = auth.uid() and status = p_status;
+  perform set_config('sasehacks.bypass_guard', 'off', true);
+end
+$$;
+
+revoke all on function public.mark_own_status_emailed(text) from public;
+grant execute on function public.mark_own_status_emailed(text) to authenticated;
+
 -- keep-alive ping for the GitHub Actions cron (.github/workflows/supabase-keepalive.yml).
 -- Does a real read of mailing_list without exposing any emails to anon: returns only the row count.
 create or replace function public.keep_alive()
@@ -282,7 +509,7 @@ execute function public.guard_registration_insert();
 
 drop trigger if exists trg_guard_profile_locked on public.profiles;
 create trigger trg_guard_profile_locked
-before update on public.profiles
+before insert or update on public.profiles
 for each row
 execute function public.guard_profile_locked();
 
@@ -296,6 +523,7 @@ alter table public.user_roles enable row level security;
 alter table public.events enable row level security;
 alter table public.attendance enable row level security;
 alter table public.mailing_list enable row level security;
+alter table public.settings enable row level security;
 
 -- ================
 -- RLS - PROFILES
@@ -431,6 +659,25 @@ to authenticated
 using ( public.is_admin(auth.uid()) )
 with check ( public.is_admin(auth.uid()) );
 
+-- ==================
+-- RLS - SETTINGS
+-- ==================
+-- readable by signed-in users (deadlines aren't secret); only admins can change them
+drop policy if exists "settings_authenticated_select" on public.settings;
+create policy "settings_authenticated_select"
+on public.settings
+for select
+to authenticated
+using ( true );
+
+drop policy if exists "settings_admin_all" on public.settings;
+create policy "settings_admin_all"
+on public.settings
+for all
+to authenticated
+using ( public.is_admin(auth.uid()) )
+with check ( public.is_admin(auth.uid()) );
+
 -- ===========
 -- STORAGE RLS
 -- ===========
@@ -489,6 +736,7 @@ create index if not exists idx_registrations_status on public.registrations (sta
 create index if not exists idx_user_roles_user on public.user_roles (user_id);
 create index if not exists idx_attendance_event on public.attendance (event_id);
 create unique index if not exists idx_mailing_list_email on public.mailing_list (lower(email));
+create unique index if not exists idx_profiles_discord_id on public.profiles (discord_id);
 
 -- Reload the API schema cache
 select pg_notify('pgrst', 'reload schema');
@@ -513,3 +761,13 @@ select pg_notify('pgrst', 'reload schema');
 --   select set_config('request.jwt.claims', '{"sub":"APPLICANT_USER_ID"}', true);
 --   update public.registrations set status = 'confirmed' where user_id = 'APPLICANT_USER_ID';
 --   rollback;
+--
+-- Same setup, other guards (each should raise):
+--   select public.rsvp(true);                 -- while status is not 'accepted'
+--   update public.registrations set review_score = 5 where user_id = 'APPLICANT_USER_ID';
+--   update public.profiles set discord_id = '123' where id = 'APPLICANT_USER_ID';
+--   -- after setting settings.applications_close to the past:
+--   select public.submit_application();
+--
+-- Change the application deadline:
+--   update public.settings set applications_close = '2027-02-01 23:59:00-05';

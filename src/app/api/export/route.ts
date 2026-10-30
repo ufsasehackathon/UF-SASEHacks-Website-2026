@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { APPLICATION_QUESTIONS } from "@/lib/validation";
 
 export async function GET() {
   const supabase = await createSupabaseServerClient();
@@ -11,7 +12,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("registrations")
-    .select("user_id, status, editing_locked, resume_updated_at, profiles(full_name,email,school,major,tshirt,country)");
+    .select("user_id, status, editing_locked, resume_updated_at, submitted_at, review_score, responses, profiles(full_name,email,school,major,tshirt,country,discord_username)");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
@@ -19,7 +20,8 @@ export async function GET() {
   const rows = (data ?? []) as any[];
   const header = [
     "user_id","full_name","email","school","major","tshirt","country",
-    "status","editing_locked","resume_updated_at"
+    "discord_username","status","review_score","submitted_at","editing_locked","resume_updated_at",
+    ...APPLICATION_QUESTIONS.map(q => q.id),
   ];
   const lines = [header.join(",")];
 
@@ -33,9 +35,13 @@ export async function GET() {
       p.major ?? "",
       p.tshirt ?? "",
       p.country ?? "",
+      p.discord_username ?? "",
       r.status ?? "",
+      r.review_score ?? "",
+      r.submitted_at ?? "",
       String(!!r.editing_locked),
       r.resume_updated_at ?? "",
+      ...APPLICATION_QUESTIONS.map(q => r.responses?.[q.id] ?? ""),
     ].map(v => {
       const s = String(v ?? "");
       return /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
