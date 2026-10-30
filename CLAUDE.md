@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Registration and information website for UF SASE Hacks, a hackathon. Next.js 15 (App Router) + TypeScript, Supabase (Postgres/Auth/Storage), Tailwind CSS 4, Notion API (for FAQ content), Resend (transactional email).
+Registration and information website for UF SASE Hacks, a hackathon. Next.js 15 (App Router) + TypeScript, Supabase (Postgres/Auth/Storage), Tailwind CSS 4, Google Docs (FAQ content, via public export), Resend (transactional email).
 
 The application/acceptance design is in `docs/superpowers/specs/2026-10-29-applications-acceptance-design.md`.
 
@@ -43,8 +43,7 @@ There is no test suite configured in this repo.
 ```
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
-NOTION_API_KEY=
-NOTION_DB_ID=
+GOOGLE_FAQ_DOC_ID=   # ID from docs.google.com/document/d/<ID>/edit; doc must be "Anyone with the link can view"
 RESEND_API_KEY=
 EMAIL_FROM=          # e.g. "SASEHacks <team@sasehacks.com>", on a domain verified in Resend
 EMAIL_REPLY_TO=      # an inbox organizers read
@@ -153,9 +152,9 @@ Two Supabase client constructors exist and are not interchangeable:
 
 `src/app/page.tsx` composes independent section components from `src/components/sections/` (Hero, About, Tracks, Schedule, Sponsors, Partners, Teams, FAQ). Each section is intentionally kept in its own file so multiple people can work on different sections without merge conflicts — follow that convention when touching the landing page rather than inlining sections back into `page.tsx`.
 
-### FAQ via Notion
+### FAQ via Google Docs
 
-`src/lib/notion.ts` queries a Notion database (filtered to `published = true`, sorted by an `order` number property) and maps rows to `{ id, question, answer, order }`, converting Notion rich-text links to markdown. Exposed to the client via `src/app/api/faq/route.ts` (excluded from the auth-refresh middleware matcher) and rendered by `src/components/FaqList.tsx`. Failures are swallowed (returns `[]` with a console error), so a missing/misconfigured Notion DB degrades gracefully rather than breaking the page.
+`src/lib/googleDocs.ts` fetches the FAQ Google Doc's public Markdown export (`/export?format=md`, no API key; the doc must be shared as "Anyone with the link can view") and parses it top-down into `{ id, question, answer, order }`: a `Q:` line starts an item, `A:` starts its answer (following paragraphs/bullets are included), any heading (section titles like "General" — these must use a Heading paragraph style) ends the current item, and a line reading `Hidden` stops parsing so drafts can sit below it. Links come through as markdown. `src/app/page.tsx` fetches it server-side (revalidate 600s) and renders `FaqSection`; it's also exposed via `src/app/api/faq/route.ts` (excluded from the auth-refresh middleware matcher). Failures are swallowed (returns `[]` with a console error), so a missing/private doc degrades gracefully rather than breaking the page.
 
 ### Feature flags & event constants
 
