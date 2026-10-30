@@ -8,9 +8,11 @@ export const VENUE = "Harrell Medical Education Building";
 export const DISCORD_INVITE = "https://discord.gg/gJJVmEPzc6";
 export const DEVPOST_URL = "https://sasehacks.devpost.com/";
 
-// Master switches: flip to true when applications launch
-export const REGISTRATIONS_ENABLED = false;
-export const LOGIN_ENABLED = false;
+// Master switches, set per environment (e.g. on for Vercel Preview/dev, off for Production
+// until launch). NEXT_PUBLIC_ because the header (a client component) reads LOGIN_ENABLED;
+// they're inlined at build time, so redeploy after changing them.
+export const REGISTRATIONS_ENABLED = process.env.NEXT_PUBLIC_REGISTRATIONS_ENABLED === "true";
+export const LOGIN_ENABLED = process.env.NEXT_PUBLIC_LOGIN_ENABLED === "true";
 
 // PLACEHOLDERS: confirm with organizers.
 // Keep APPLICATIONS_CLOSE in sync with public.settings.applications_close (enforced by the DB).

@@ -47,7 +47,11 @@ GOOGLE_FAQ_DOC_ID=   # ID from docs.google.com/document/d/<ID>/edit; doc must be
 RESEND_API_KEY=
 EMAIL_FROM=          # e.g. "SASEHacks <team@sasehacks.com>", on a domain verified in Resend
 EMAIL_REPLY_TO=      # an inbox organizers read
+NEXT_PUBLIC_LOGIN_ENABLED=          # "true" shows login; anything else hides it
+NEXT_PUBLIC_REGISTRATIONS_ENABLED=  # "true" opens applications (until APPLICATIONS_CLOSE)
 ```
+
+The two `NEXT_PUBLIC_*_ENABLED` flags are set per environment: on in local `.env` and Vercel Preview (`dev`), off in Production until launch. They're inlined at build time, so redeploy after changing them in Vercel.
 
 Without `RESEND_API_KEY`/`EMAIL_FROM`, emails are skipped (logged) and stay queued; nothing else breaks.
 
@@ -159,7 +163,7 @@ Two Supabase client constructors exist and are not interchangeable:
 ### Feature flags & event constants
 
 All in `src/lib/constants.ts`:
-- `REGISTRATIONS_ENABLED` / `LOGIN_ENABLED`: master switches, both false until launch.
+- `REGISTRATIONS_ENABLED` / `LOGIN_ENABLED`: master switches read from `NEXT_PUBLIC_REGISTRATIONS_ENABLED` / `NEXT_PUBLIC_LOGIN_ENABLED` (true only when the value is exactly `"true"`). Toggle them per environment, not in code.
 - `registrationsOpen()` = `REGISTRATIONS_ENABLED && now < APPLICATIONS_CLOSE`. It's a function, not a constant, so the deadline takes effect without a redeploy. The DB enforces the deadline separately via `settings.applications_close`.
 - `APPLICATIONS_CLOSE`, `DECISIONS_BY`, `RSVP_WINDOW_DAYS`, `EVENT_CAPACITY` are **placeholders** to confirm with organizers.
 - `EMAIL_DAILY_CAP` is 100 for the Resend free plan. Raise it if you upgrade.

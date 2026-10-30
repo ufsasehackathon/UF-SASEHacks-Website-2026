@@ -14,7 +14,8 @@ The code is built and `npm run lint` / `npm run build` pass. **None of it has be
 - [ ] Supabase Auth → Providers: enable **Discord**. Create an app at discord.com/developers and use the redirect `https://<project>.supabase.co/auth/v1/callback`
 - [ ] Supabase Auth: enable **manual identity linking** (needed for "Connect Discord")
 - [ ] Supabase Auth → URL config: add `http://localhost:3000` and the dev/preview URLs to the redirect allow list
-- [ ] For local testing, set `REGISTRATIONS_ENABLED` and `LOGIN_ENABLED` to `true` in `src/lib/constants.ts`. **Don't merge that to `main` before launch.**
+- [x] Login/registration switches are env vars now (`NEXT_PUBLIC_LOGIN_ENABLED`, `NEXT_PUBLIC_REGISTRATIONS_ENABLED`). Both are set to `true` in local `.env`.
+- [ ] Vercel: set both to `true` for **Preview** (dev branch) and leave them unset/`false` for **Production**. Redeploy after changing them.
 
 ## 2. Test checklist
 Database guards (snippets at the bottom of `schema.sql`, run as a non-admin JWT). Each of these should fail:
@@ -56,7 +57,7 @@ End to end, with two or three accounts, one of them admin:
 
 ## 5. Launch
 - [ ] Merge `dev` → `main`
-- [ ] Set `REGISTRATIONS_ENABLED` and `LOGIN_ENABLED` to `true`
+- [ ] Set `NEXT_PUBLIC_LOGIN_ENABLED` and `NEXT_PUBLIC_REGISTRATIONS_ENABLED` to `true` in Vercel **Production**, then redeploy (no code change)
 - [ ] Production Supabase: run `schema.sql`, set up providers, SMTP and redirect URLs
 
 ## Known gaps / follow-ups
