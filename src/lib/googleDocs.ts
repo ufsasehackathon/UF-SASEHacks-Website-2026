@@ -48,7 +48,10 @@ export function parseFaqMarkdown(markdown: string): FaqItem[] {
       continue;
     }
 
-    const q = line.match(/^Q:\s*(.*)$/i);
+    // Q:/A: lines may themselves be list items ("* **Q: ...**").
+    const content = line.replace(/^(?:[-*+]|\d+[.)])\s+/, "");
+
+    const q = content.match(/^Q:\s*(.*)$/i);
     if (q) {
       finish();
       current = { question: q[1].trim(), answer: [] };
@@ -57,7 +60,7 @@ export function parseFaqMarkdown(markdown: string): FaqItem[] {
 
     if (!current) continue;
 
-    const a = line.match(/^A:\s*(.*)$/i);
+    const a = content.match(/^A:\s*(.*)$/i);
     if (a) {
       inAnswer = true;
       if (a[1]) current.answer.push(a[1]);
