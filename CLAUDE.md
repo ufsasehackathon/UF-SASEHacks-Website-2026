@@ -17,6 +17,16 @@ The application/acceptance design is in `docs/superpowers/specs/2026-10-29-appli
 
 Commit it together with the code it describes.
 
+## Rule: keep CLAUDE.md current
+
+**After every code change, also update this file if the change affects anything documented here**, in the same commit as the code. That includes:
+- architecture, data model, schema/RPCs/guards
+- routes and flows
+- env vars, constants/flags
+- conventions, commands, roadmap
+
+Fix or remove anything the change made out of date. Nothing here should describe code that no longer exists.
+
 ## Commands
 
 ```bash
