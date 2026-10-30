@@ -8,6 +8,15 @@ Registration and information website for UF SASE Hacks, a hackathon. Next.js 15 
 
 The application/acceptance design is in `docs/superpowers/specs/2026-10-29-applications-acceptance-design.md`.
 
+## Rule: keep WIP.md current
+
+`WIP.md` (repo root) tracks in-progress work and next steps. **After every code change, update `WIP.md` in the same change:**
+- Check off finished items.
+- Add new follow-ups, known gaps, or setup steps the change introduced.
+- Remove items that no longer apply.
+
+Commit it together with the code it describes.
+
 ## Commands
 
 ```bash
