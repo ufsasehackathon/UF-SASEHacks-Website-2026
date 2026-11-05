@@ -90,7 +90,7 @@ Tables (all in `public`, all with RLS enabled):
 | status | meaning | set by |
 |---|---|---|
 | `draft` | row exists, not submitted | `ensureRows()` (insert guard forces it) |
-| `pending` | submitted, awaiting review | `submit_application()` RPC |
+| `pending` | submitted, awaiting review (always has `submitted_at`; `schema.sql` resets `pending` rows without one, left over from the old `pending` default, to `draft`) | `submit_application()` RPC |
 | `accepted` | offered a spot, must RSVP by `rsvp_deadline` | admin (`setStatus` stamps `accepted_at` + `RSVP_WINDOW_DAYS`) |
 | `confirmed` | RSVP'd yes (attending) | `rsvp(true)` RPC (needs a linked Discord identity) or admin |
 | `declined` | RSVP'd no, dropped out, or RSVP expired | `rsvp(false)` / admin "Expire overdue RSVPs" |
@@ -117,7 +117,7 @@ Functions (RPCs):
 - `keep_alive()` — `security definer`, callable by `anon`. Returns `count(*)` of `mailing_list` (never the emails). Called every 3 days by `.github/workflows/supabase-keepalive.yml` so the free-tier project doesn't pause.
 
 DB-enforced guards (triggers). These apply only to non-admin callers with a JWT. The SQL editor and service role (`auth.uid()` null) bypass them:
-- Non-admins can't change `registrations.status`, `editing_locked`, `notes`, `user_id`, `review_score`, `reviewed_by`, the lifecycle timestamps, or `last_emailed_status` (raises `42501`).
+- Non-admins can't change `registrations.status`, `editing_locked`, `notes`, `user_id`, `review_score`, `reviewed_by`, the lifecycle timestamps, or `last_emailed_status` (raises `42501`). They also can't change `responses` once the row is out of `draft`.
 - Registrations inserted by non-admins are forced to `draft`/unlocked with all admin fields null. This forces values rather than raising, so `ensureRows()` keeps working.
 - Profile updates raise `42501` when the user's registration has `editing_locked = true`. RLS also blocks owner updates to a locked registration.
 - Non-admins can't set `profiles.discord_id`/`discord_username` directly.
@@ -132,8 +132,9 @@ Resumes are required to submit. Upload validation (10 MB, PDF signature check) a
 
 ### Hacker portal flow
 
+- The header (`Header.tsx` → `HeaderClient.tsx`) shows a "Dashboard" link to `/portal` for any signed-in user (desktop button + mobile menu).
 - `/portal` always renders for a logged-in user (no redirect home). One main card is driven by `registrations.status`: a draft shows time left and an "Apply" link, which becomes "Continue application" plus a Profile/Agreements/Resume checklist (`isProfileComplete`/`hasRequiredConsents` in `validation.ts`) once any of those is saved (or "Applications are closed"); pending shows submission date and `DECISIONS_BY`; accepted shows `RsvpButtons` (Step 1 Connect Discord, Step 2 confirm/decline); confirmed shows event info plus a drop-out link; waitlist/declined/rejected show a message (declined/rejected/closed also link to the hero mailing list, `/#mailing-list`). Edit Profile/Resume cards are hidden while in draft.
-- `/portal/profile` edits the profile + consents (`ProfileForm`) and, separately, the free-response answers (`ResponsesForm` → `saveResponses`), both read-only once `editing_locked`.
+- `/portal/profile` edits the profile + consents (`ProfileForm`), read-only once `editing_locked`. Free-response answers are **not** editable after submitting: `saveResponses` only works in `draft`, and the DB guard blocks non-admin changes to `responses` once status leaves `draft`.
 - `/portal/onboarding` is the application form. It's only reachable in `draft` (otherwise it redirects to `/portal`). "Submit Application" saves profile → consents → resume (optional if one is already on file) → free-response answers, then calls `submitApplication()`.
 
 ### Admin review flow
@@ -155,7 +156,7 @@ Two Supabase client constructors exist and are not interchangeable:
 
 Form selects start blank when the answer isn't known (only `email` is prefilled, from the auth email): the page components pass `ProfileFormDefaults` (enum fields may be `""`), so a required select fails validation until the applicant picks something. Don't add guessed defaults back.
 
-**Free-response questions are different and much cheaper to change:** edit only the `APPLICATION_QUESTIONS` array (`id`, `label`, `placeholder?`, `required`, `maxLength`). Answers go in `registrations.responses` keyed by `id`. The onboarding form, `ResponsesForm` on `/portal/profile`, `responsesSchema`, admin detail page and CSV export all loop over the array, so no schema/action/admin changes are needed. Removing a question hides old answers but keeps them (`saveResponses` merges). Never reuse an old `id` for a different question.
+**Free-response questions are different and much cheaper to change:** edit only the `APPLICATION_QUESTIONS` array (`id`, `label`, `placeholder?`, `required`, `maxLength`). Answers go in `registrations.responses` keyed by `id`. The onboarding form, `responsesSchema`, admin detail page and CSV export all loop over the array, so no schema/action/admin changes are needed. Removing a question hides old answers but keeps them (`saveResponses` merges). Never reuse an old `id` for a different question.
 
 ### Landing page sections
 

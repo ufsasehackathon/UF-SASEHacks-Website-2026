@@ -104,6 +104,14 @@ export default function OnboardingForm({
       return;
     }
 
+    // Validate required free-response answers before saving anything
+    const unanswered = APPLICATION_QUESTIONS.find(q => q.required && !(responses[q.id] ?? "").trim());
+    if (unanswered) {
+      setServerMsg(`Please answer: "${unanswered.label}"`);
+      setIsSubmitting(false);
+      return;
+    }
+
     // Validate resume (required, but one already on file counts)
     if (!resumeFile && !hasResume) {
       setServerMsg("You must upload a resume to continue.");
@@ -585,6 +593,7 @@ export default function OnboardingForm({
                   className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
                   rows={4}
                   maxLength={q.maxLength}
+                  required={q.required}
                   disabled={disabled}
                   placeholder={q.placeholder}
                   value={responses[q.id] ?? ""}

@@ -260,7 +260,7 @@ export const APPLICATION_QUESTIONS = [
     id: "build_or_learn",
     label: "What do you want to build or learn at SASEHacks?",
     placeholder: "A project idea, a technology you want to try, people you want to meet...",
-    required: false,
+    required: true,
     maxLength: 500,
   },
 ] as const satisfies readonly {

@@ -1,7 +1,6 @@
-import { ensureRows, upsertProfileAndConsents, saveResponses } from "../actions";
+import { ensureRows, upsertProfileAndConsents } from "../actions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import ProfileForm from "@/components/forms/ProfileForm";
-import ResponsesForm from "@/components/forms/ResponsesForm";
 import { dietaryOptions, raceOptions } from "@/lib/validation";
 import Link from "next/link";
 
@@ -22,7 +21,7 @@ export default async function ProfilePage() {
 
   const { data: registration } = await supabase
     .from("registrations")
-    .select("editing_locked, responses, accuracy_agreement, terms_and_conditions, code_of_conduct, can_photograph, share_resume_with_companies, mlh_code_of_conduct, mlh_data_sharing, mlh_communications")
+    .select("editing_locked, accuracy_agreement, terms_and_conditions, code_of_conduct, can_photograph, share_resume_with_companies, mlh_code_of_conduct, mlh_data_sharing, mlh_communications")
     .eq("user_id", user.id)
     .single();
 
@@ -142,13 +141,6 @@ export default async function ProfilePage() {
           />
         </div>
 
-        <div className="mt-6">
-          <ResponsesForm
-            initialResponses={(registration?.responses as Record<string, string> | null) ?? {}}
-            action={saveResponses}
-            disabled={disabled}
-          />
-        </div>
       </div>
     </div>
   );

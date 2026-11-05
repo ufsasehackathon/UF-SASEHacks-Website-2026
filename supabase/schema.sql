@@ -85,6 +85,11 @@ alter table public.registrations drop constraint if exists registrations_status_
 alter table public.registrations add constraint registrations_status_check
   check (status in ('draft','pending','accepted','confirmed','declined','waitlist','rejected'));
 
+-- Rows created before the draft status existed defaulted to 'pending' without being
+-- submitted. A real submission always sets submitted_at, so these are really drafts.
+update public.registrations set status = 'draft'
+where status = 'pending' and submitted_at is null;
+
 alter table public.registrations drop constraint if exists registrations_review_score_check;
 alter table public.registrations add constraint registrations_review_score_check
   check (review_score is null or review_score between 1 and 5);
@@ -201,6 +206,11 @@ begin
        or new.reviewed_by is distinct from old.reviewed_by
        or new.last_emailed_status is distinct from old.last_emailed_status then
       raise exception 'Not allowed to change admin-controlled registration fields'
+        using errcode = '42501';
+    end if;
+    -- free-response answers are final once the application is submitted
+    if new.responses is distinct from old.responses and old.status <> 'draft' then
+      raise exception 'Application answers can''t be changed after submitting'
         using errcode = '42501';
     end if;
   end if;

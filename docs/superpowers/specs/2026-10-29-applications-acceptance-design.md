@@ -115,7 +115,7 @@ Changes:
 - After submission, editing stays open until an admin locks it or the hacker is decided. `editing_locked` already exists.
 - **Free-response questions: config-driven, so they're easy to add and remove.**
   - All free-response questions are defined in one list, `APPLICATION_QUESTIONS` in `src/lib/validation.ts`. Each entry has an `id`, `label`, `required`, `maxLength` and an optional `placeholder`.
-  - Starting list: one optional question, `{ id: "build_or_learn", label: "What do you want to build or learn at SASEHacks?", required: false, maxLength: 500 }`.
+  - Starting list: one required question, `{ id: "build_or_learn", label: "What do you want to build or learn at SASEHacks?", required: true, maxLength: 500 }`.
   - Answers are stored in a single `registrations.responses jsonb` column (default `'{}'`), keyed by question `id`. Adding or removing a question is an edit to that one array, with no change to the schema, the actions or the admin table.
   - The form, the Zod validation (built from the list), the admin detail page and the CSV export all loop over `APPLICATION_QUESTIONS`.
   - When a question is removed, its old answers stay in the jsonb column and are simply no longer shown.
@@ -203,7 +203,7 @@ Builds on `src/app/admin/actions.ts`, `src/app/admin/page.tsx`, `src/app/admin/[
 - Application deadline, RSVP window (7 days?), event capacity.
 - Sending domain: `ufsasehacks.com` or `sasehacks.com`? `src/lib/constants.ts` currently says `DOMAIN = "sasehacks.com"`.
 
-Resolved: resume required; last year's rows already deleted; Resend for email; keep the one optional free-response question, config-driven.
+Resolved: resume required; last year's rows already deleted; Resend for email; one free-response question (now required), config-driven.
 
 ## Verification
 - `npm run lint` and `npm run build` pass.

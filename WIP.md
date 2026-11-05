@@ -11,6 +11,7 @@ The code is built and `npm run lint` / `npm run build` pass. **None of it has be
 - [ ] Use a separate Supabase project for testing (recommended), or the real one before launch
 - [ ] Run `supabase/schema.sql` in the SQL editor
   - Re-running it also drops the old shipping-address columns (`address_line1/2`, `city`, `state`, `zip_code`) from `profiles`
+  - It also resets never-submitted `pending` rows (`submitted_at` null, from the old `pending` default) to `draft`
 - [ ] Make yourself admin (snippet at the bottom of `schema.sql`)
 - [ ] Supabase Auth → Providers: enable **Discord**. Create an app at discord.com/developers and use the redirect `https://<project>.supabase.co/auth/v1/callback`
 - [ ] Supabase Auth: enable **manual identity linking** (needed for "Connect Discord")
@@ -27,11 +28,12 @@ Database guards (snippets at the bottom of `schema.sql`, run as a non-admin JWT)
 - [ ] `submit_application()` after `settings.applications_close`
 
 End to end, with two or three accounts, one of them admin:
-- [ ] New email-login user → portal shows the "Finish your application" card
-- [ ] Submit without a resume or without the required agreements → blocked
+- [ ] New email-login user → header shows "Dashboard" right after login; portal shows the "Apply to SASEHacks" card
+- [ ] Account created before the schema update → portal shows Apply, not "Application received"
+- [ ] Submit without a resume, the required agreements, or the short answer → blocked (nothing saved)
 - [ ] Submit → status `pending`, and the "application received" email arrives (needs Resend set up)
 - [ ] Free-response answer shows on `/admin/[userId]` and in the CSV export
-- [ ] Free-response answer can be edited on `/portal/profile` after submitting, and is read-only once editing is locked
+- [ ] Free-response answers can't be changed after submitting (not shown on `/portal/profile`; a direct `update registrations set responses = ...` as a non-admin JWT fails)
 - [ ] Brand-new user: draft card says "Apply" (no checklist); the application form has only email prefilled, and submitting with age/grad year/level/skill/hackathons blank shows an error under each
 - [ ] Draft whose submit failed partway: card says "Continue application" with the checklist; declined/rejected cards link to the mailing list
 - [ ] Admin: score, then "Save & next unreviewed" moves to the next applicant

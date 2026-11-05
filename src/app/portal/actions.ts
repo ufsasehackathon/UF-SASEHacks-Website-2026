@@ -194,10 +194,11 @@ export async function saveResponses(formData: FormData) {
   // Merge so answers to questions that were since removed from the form are kept
   const { data: reg } = await supabase
     .from("registrations")
-    .select("responses, editing_locked")
+    .select("responses, status")
     .eq("user_id", user.id)
     .single();
-  if (reg?.editing_locked) return { ok: false, error: "Editing is locked" };
+  // Answers are final once submitted (the DB guard enforces this too)
+  if (reg?.status !== "draft") return { ok: false, error: "Your answers can't be changed after you submit" };
 
   const { error } = await supabase
     .from("registrations")
@@ -205,7 +206,6 @@ export async function saveResponses(formData: FormData) {
     .eq("user_id", user.id);
 
   if (error) return { ok: false, error: error.message };
-  revalidatePath("/portal/profile");
   return { ok: true };
 }
 
