@@ -32,7 +32,7 @@ export default function MailingListForm() {
   }
 
   return (
-    <div className="flex flex-col items-center mb-8 w-full">
+    <div id="mailing-list" className="flex flex-col items-center mb-8 w-full scroll-mt-28">
       <form
         onSubmit={onSubmit}
         className="flex items-center w-full max-w-sm rounded-full bg-white/90 border-2 border-[#560700]/20 shadow-md pl-5 pr-1 py-1 focus-within:border-[#560700]/60 transition-colors"

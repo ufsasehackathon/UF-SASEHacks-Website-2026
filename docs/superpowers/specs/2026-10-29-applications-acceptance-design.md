@@ -102,7 +102,7 @@ Keep the current form (`src/components/forms/OnboardingForm.tsx`, schema in `src
 - **Identity:** first/last name, email, phone, age.
 - **School:** school (MLH list), major, grad year, level of study.
 - **Experience:** skill level, hackathon count, LinkedIn.
-- **Shipping address:** for swag/MLH.
+- ~~**Shipping address**~~: removed (not needed).
 - **Logistics:** t-shirt, dietary, accessibility.
 - **Demographics (optional):** gender, race.
 - **Resume:** PDF.

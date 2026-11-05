@@ -38,6 +38,8 @@ npm run lint     # eslint (flat config extending next/core-web-vitals, next/type
 
 There is no test suite configured in this repo.
 
+**Rule: don't run `npm run build` while `npm run dev` is running.** Both write to `.next/`, so a build overwrites the dev server's files and it starts throwing `ENOENT ... _buildManifest.js.tmp...` errors. Check first (`pgrep -fl "next dev"`). If a dev server is up, verify with `npm run lint` and `npx tsc --noEmit` instead, or ask before building. To recover: stop the dev server, `rm -rf .next`, then `npm run dev`.
+
 ### Environment variables (`.env.local`)
 
 ```
@@ -75,7 +77,7 @@ Every admin server action in `src/app/admin/actions.ts` re-checks `is_admin` its
 ### Data model (source of truth: `supabase/schema.sql`)
 
 Tables (all in `public`, all with RLS enabled):
-- `profiles` — keyed by `id` → `auth.users(id)` (cascade). Personal/demographic info: `full_name`, `first_name`, `last_name`, `email` (unique; where status emails go, editable on the form), `phone_number`, `date_of_birth`, `age`, `school`, `major`, `grad_year`, `level_of_study`, `engineering_skill`, `hackathon_experience`, `linkedin_url`, address (`address_line1/2`, `city`, `state`, `zip_code`, `country`), `tshirt`, `dietary text[]`, `accessibility`, `gender`, `race text[]`, `discord_id` (unique)/`discord_username` (set only by `sync_discord_profile`), `created_at`/`updated_at`.
+- `profiles` — keyed by `id` → `auth.users(id)` (cascade). Personal/demographic info: `full_name`, `first_name`, `last_name`, `email` (unique; where status emails go, editable on the form), `phone_number`, `date_of_birth`, `age`, `school`, `major`, `grad_year`, `level_of_study`, `engineering_skill`, `hackathon_experience`, `linkedin_url`, `country`, `tshirt`, `dietary text[]`, `accessibility`, `gender`, `race text[]`, `discord_id` (unique)/`discord_username` (set only by `sync_discord_profile`), `created_at`/`updated_at`.
 - `registrations` — keyed by `user_id` → `profiles(id)` (cascade). `status` (check-constrained, default `draft`, see lifecycle below), `editing_locked`, admin-only `notes`/`review_score` (1–5)/`reviewed_by`, lifecycle timestamps (`submitted_at`, `accepted_at`, `rsvp_deadline`, `rsvp_at`), `last_emailed_status` (email queue marker), `responses jsonb` (free-response answers keyed by question id), consent flags (`accuracy_agreement`, `terms_and_conditions`, `code_of_conduct`, `can_photograph`, `share_resume_with_companies`, `mlh_code_of_conduct`, `mlh_data_sharing`, `mlh_communications`), resume fields (`resume_url`, `resume_updated_at`), timestamps.
 - `settings` — single row (`id = true`). `applications_close`, enforced by `submit_application()`. Keep it in sync with `APPLICATIONS_CLOSE` in `src/lib/constants.ts`. Readable by signed-in users, writable by admins.
 - `user_roles` — `(user_id, role)` composite PK; `role` is constrained to `'admin'` or `'sponsor'`. Users can read their own roles; only admins can write. `sponsor` is defined but not used by the app yet.
@@ -130,7 +132,8 @@ Resumes are required to submit. Upload validation (10 MB, PDF signature check) a
 
 ### Hacker portal flow
 
-- `/portal` always renders for a logged-in user (no redirect home). One main card is driven by `registrations.status`: a draft gets a "Continue application" link (or "Applications are closed"); pending shows submission date and `DECISIONS_BY`; accepted shows `RsvpButtons` (Step 1 Connect Discord, Step 2 confirm/decline); confirmed shows event info plus a drop-out link; waitlist/declined/rejected show a message. Edit Profile/Resume cards are hidden while in draft.
+- `/portal` always renders for a logged-in user (no redirect home). One main card is driven by `registrations.status`: a draft shows time left and an "Apply" link, which becomes "Continue application" plus a Profile/Agreements/Resume checklist (`isProfileComplete`/`hasRequiredConsents` in `validation.ts`) once any of those is saved (or "Applications are closed"); pending shows submission date and `DECISIONS_BY`; accepted shows `RsvpButtons` (Step 1 Connect Discord, Step 2 confirm/decline); confirmed shows event info plus a drop-out link; waitlist/declined/rejected show a message (declined/rejected/closed also link to the hero mailing list, `/#mailing-list`). Edit Profile/Resume cards are hidden while in draft.
+- `/portal/profile` edits the profile + consents (`ProfileForm`) and, separately, the free-response answers (`ResponsesForm` → `saveResponses`), both read-only once `editing_locked`.
 - `/portal/onboarding` is the application form. It's only reachable in `draft` (otherwise it redirects to `/portal`). "Submit Application" saves profile → consents → resume (optional if one is already on file) → free-response answers, then calls `submitApplication()`.
 
 ### Admin review flow
@@ -150,7 +153,9 @@ Two Supabase client constructors exist and are not interchangeable:
 
 `src/lib/validation.ts` is the single source of truth for profile/registration form shape: Zod schemas (`profileSchema`, `registrationFlagsSchema`, `responsesSchema`) plus the option lists + human-readable label maps (t-shirt sizes, dietary, gender, race, major, level of study, etc.) that both the forms and the admin table rely on. When adding a new profile field, it typically needs to be threaded through: the schema in `validation.ts`, the form component in `src/components/forms/`, the `upsertProfile` field mapping in `src/app/portal/actions.ts`, and the `AdminRow` type + query in `src/app/admin/actions.ts`.
 
-**Free-response questions are different and much cheaper to change:** edit only the `APPLICATION_QUESTIONS` array (`id`, `label`, `placeholder?`, `required`, `maxLength`). Answers go in `registrations.responses` keyed by `id`. The onboarding form, `responsesSchema`, admin detail page and CSV export all loop over the array, so no schema/action/admin changes are needed. Removing a question hides old answers but keeps them (`saveResponses` merges). Never reuse an old `id` for a different question.
+Form selects start blank when the answer isn't known (only `email` is prefilled, from the auth email): the page components pass `ProfileFormDefaults` (enum fields may be `""`), so a required select fails validation until the applicant picks something. Don't add guessed defaults back.
+
+**Free-response questions are different and much cheaper to change:** edit only the `APPLICATION_QUESTIONS` array (`id`, `label`, `placeholder?`, `required`, `maxLength`). Answers go in `registrations.responses` keyed by `id`. The onboarding form, `ResponsesForm` on `/portal/profile`, `responsesSchema`, admin detail page and CSV export all loop over the array, so no schema/action/admin changes are needed. Removing a question hides old answers but keeps them (`saveResponses` merges). Never reuse an old `id` for a different question.
 
 ### Landing page sections
 

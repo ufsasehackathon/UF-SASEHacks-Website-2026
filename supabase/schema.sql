@@ -23,11 +23,6 @@ create table if not exists public.profiles (
   level_of_study text,
   engineering_skill text,
   hackathon_experience text,
-  address_line1 text,
-  address_line2 text,
-  city text,
-  state text,
-  zip_code text,
   country text,
   tshirt text,
   dietary text[],
@@ -45,6 +40,12 @@ create table if not exists public.profiles (
 -- Discord account, filled by sync_discord_profile() after a Discord login or link
 alter table public.profiles add column if not exists discord_id text;
 alter table public.profiles add column if not exists discord_username text;
+-- Shipping address was removed from the application
+alter table public.profiles drop column if exists address_line1;
+alter table public.profiles drop column if exists address_line2;
+alter table public.profiles drop column if exists city;
+alter table public.profiles drop column if exists state;
+alter table public.profiles drop column if exists zip_code;
 
 -- registrations
 create table if not exists public.registrations (

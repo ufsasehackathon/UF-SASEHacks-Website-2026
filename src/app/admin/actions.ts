@@ -44,11 +44,6 @@ export type AdminRow = {
     level_of_study: string | null;
     engineering_skill: string | null;
     hackathon_experience: string | null;
-    address_line1: string | null;
-    address_line2: string | null;
-    city: string | null;
-    state: string | null;
-    zip_code: string | null;
     country: string | null;
     tshirt: string | null;
     gender: string | null;

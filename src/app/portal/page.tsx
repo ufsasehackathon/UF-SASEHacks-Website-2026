@@ -12,7 +12,12 @@ import {
   APPLICATIONS_CLOSE,
   registrationsOpen,
 } from "@/lib/constants";
-import { registrationStatusLabels, type RegistrationStatus } from "@/lib/validation";
+import {
+  registrationStatusLabels,
+  isProfileComplete,
+  hasRequiredConsents,
+  type RegistrationStatus,
+} from "@/lib/validation";
 import RsvpButtons from "@/components/portal/RsvpButtons";
 
 const fmt = (iso: string) =>
@@ -26,13 +31,13 @@ export default async function PortalPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("first_name, full_name, discord_username")
+    .select("*")
     .eq("id", user?.id ?? "")
     .maybeSingle();
 
   const { data: reg } = await supabase
     .from("registrations")
-    .select("status, editing_locked, resume_url, resume_updated_at, submitted_at, rsvp_deadline")
+    .select("status, editing_locked, resume_url, resume_updated_at, submitted_at, rsvp_deadline, accuracy_agreement, terms_and_conditions, code_of_conduct, can_photograph, share_resume_with_companies, mlh_code_of_conduct, mlh_data_sharing, mlh_communications")
     .eq("user_id", user?.id ?? "")
     .single();
 
@@ -40,6 +45,19 @@ export default async function PortalPage() {
   const locked = reg?.editing_locked ?? false;
   const name = profile?.first_name || profile?.full_name || "";
   const rsvpOverdue = status === "accepted" && reg?.rsvp_deadline && Date.now() > Date.parse(reg.rsvp_deadline);
+
+  // Draft checklist. Profile/consents are only saved when the form is submitted, so these
+  // mostly matter for someone whose submit failed partway (e.g. on the resume step).
+  const checklist = [
+    { label: "Profile", done: isProfileComplete(profile) },
+    { label: "Agreements", done: hasRequiredConsents(reg) },
+    { label: "Resume", done: !!reg?.resume_url },
+  ];
+  const started = checklist.some(item => item.done);
+  const msLeft = Date.parse(APPLICATIONS_CLOSE) - Date.now();
+  const daysLeft = Math.floor(msLeft / 86_400_000);
+  const hoursLeft = Math.floor(msLeft / 3_600_000);
+  const timeLeft = daysLeft >= 1 ? `${daysLeft} day${daysLeft === 1 ? "" : "s"}` : `${Math.max(hoursLeft, 0)} hour${hoursLeft === 1 ? "" : "s"}`;
 
   const getStatusColor = (status: RegistrationStatus) => {
     switch (status) {
@@ -77,12 +95,12 @@ export default async function PortalPage() {
   const statusCopy: Record<RegistrationStatus, { title: string; body: React.ReactNode }> = {
     draft: registrationsOpen()
       ? {
-          title: "Finish your application",
-          body: <>You haven&apos;t submitted an application yet. Applications close {fmt(APPLICATIONS_CLOSE)}.</>,
+          title: started ? "Finish your application" : `Apply to ${HACK_NAME}`,
+          body: <>{started ? "You haven't submitted your application yet." : "You haven't applied yet."} Applications close {fmt(APPLICATIONS_CLOSE)} (<strong>{timeLeft} left</strong>).</>,
         }
       : {
           title: "Applications are closed",
-          body: <>We aren&apos;t accepting applications right now. Join our mailing list on the home page to hear about next year.</>,
+          body: <>We aren&apos;t accepting applications right now. Join our mailing list to hear about next year.</>,
         },
     pending: {
       title: "Application received",
@@ -177,15 +195,37 @@ export default async function PortalPage() {
               <div className="space-y-4">
                 <p className="font-[family-name:var(--font-body)] text-gray-700">{body}</p>
 
+                {status === "draft" && registrationsOpen() && started && (
+                  <ul className="flex flex-wrap gap-2 font-[family-name:var(--font-body)] text-sm">
+                    {checklist.map(item => (
+                      <li
+                        key={item.label}
+                        className={`rounded-full px-3 py-1 ${item.done ? "bg-green-100 text-green-800" : "bg-[#FFE4B3]/60 text-[#560700]/80"}`}
+                      >
+                        {item.done ? "✓" : "○"} {item.label}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
                 {status === "draft" && registrationsOpen() && (
                   <Link
                     href="/portal/onboarding"
                     className="group w-full flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-[#560700] to-[#6b1003] text-white hover:from-[#6b1003] hover:to-[#560700] transition-all shadow-lg hover:shadow-xl"
                   >
-                    <span className="font-[family-name:var(--font-body)] font-semibold">Continue application</span>
+                    <span className="font-[family-name:var(--font-body)] font-semibold">{started ? "Continue application" : "Apply"}</span>
                     <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
+                  </Link>
+                )}
+
+                {(status === "declined" || status === "rejected" || (status === "draft" && !registrationsOpen())) && (
+                  <Link
+                    href="/#mailing-list"
+                    className="inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-[#560700] bg-[#FFE4B3]/60 hover:bg-[#FFE4B3] transition-all font-[family-name:var(--font-body)]"
+                  >
+                    Join the mailing list for next year
                   </Link>
                 )}
 

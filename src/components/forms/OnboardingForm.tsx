@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, type DefaultValues } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   profileSchema,
   type ProfileFormValues,
+  type ProfileFormDefaults,
   tshirtOptions,
   dietaryOptions,
   gradYearOptions,
@@ -26,7 +27,7 @@ import { searchCountries } from "@/lib/countries";
 import { useRouter } from "next/navigation";
 
 type Props = {
-  initialProfile: ProfileFormValues;
+  initialProfile: ProfileFormDefaults;
   initialConsents: {
     accuracy_agreement: boolean;
     terms_and_conditions: boolean;
@@ -88,7 +89,7 @@ export default function OnboardingForm({
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
-    defaultValues: initialProfile,
+    defaultValues: initialProfile as DefaultValues<ProfileFormValues>,
     mode: "onBlur",
   });
 
@@ -356,8 +357,12 @@ export default function OnboardingForm({
               disabled={disabled}
               {...form.register("grad_year")}
             >
+              <option value="">Select your graduation year</option>
               {gradYearOptions.map(y => <option key={y} value={y}>{y}</option>)}
             </select>
+            {form.formState.errors.grad_year && (
+              <p className="text-xs text-red-600 mt-1">{form.formState.errors.grad_year.message}</p>
+            )}
           </label>
 
           <label className="block">
@@ -367,10 +372,14 @@ export default function OnboardingForm({
               disabled={disabled}
               {...form.register("level_of_study")}
             >
+              <option value="">Select your level of study</option>
               {levelOfStudyOptions.map(l => (
                 <option key={l} value={l}>{levelOfStudyLabels[l]}</option>
               ))}
             </select>
+            {form.formState.errors.level_of_study && (
+              <p className="text-xs text-red-600 mt-1">{form.formState.errors.level_of_study.message}</p>
+            )}
           </label>
         </div>
         </div>
@@ -390,12 +399,16 @@ export default function OnboardingForm({
               disabled={disabled}
               {...form.register("engineering_skill")}
             >
+              <option value="">Select your skill level</option>
               <option value="1">1 - Beginning</option>
               <option value="2">2 - Learning</option>
               <option value="3">3 - Somewhat Experienced</option>
               <option value="4">4 - Experienced</option>
               <option value="5">5 - Very Experienced</option>
             </select>
+            {form.formState.errors.engineering_skill && (
+              <p className="text-xs text-red-600 mt-1">{form.formState.errors.engineering_skill.message}</p>
+            )}
           </label>
 
           <label className="block">
@@ -408,6 +421,9 @@ export default function OnboardingForm({
               <option value="">Number of hackathons attended</option>
               {hackathonExperienceOptions.map(h => <option key={h} value={h}>{h}</option>)}
             </select>
+            {form.formState.errors.hackathon_experience && (
+              <p className="text-xs text-red-600 mt-1">{form.formState.errors.hackathon_experience.message}</p>
+            )}
           </label>
         </div>
         </div>
@@ -459,63 +475,6 @@ export default function OnboardingForm({
           </div>
         </div>
 
-        <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-          <h3 className="text-sm font-semibold text-gray-700 mb-1">Shipping Address (Optional)</h3>
-          <p className="text-xs text-gray-500 mb-4">
-            Only needed if we need to ship prizes, swag, or other materials to you.
-          </p>
-
-        <div className="grid gap-4">
-          <label className="block">
-            <span className="text-sm font-medium">Address Line 1</span>
-            <input
-              className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-              disabled={disabled}
-              placeholder="Street address"
-              {...form.register("address_line1")}
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-medium">Address Line 2</span>
-            <input
-              className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-              disabled={disabled}
-              placeholder="Apt, suite, etc"
-              {...form.register("address_line2")}
-            />
-          </label>
-
-          <div className="grid gap-4 sm:grid-cols-3">
-            <label className="block">
-              <span className="text-sm font-medium">City</span>
-              <input
-                className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-                disabled={disabled}
-                {...form.register("city")}
-              />
-            </label>
-
-            <label className="block">
-              <span className="text-sm font-medium">State</span>
-              <input
-                className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-                disabled={disabled}
-                {...form.register("state")}
-              />
-            </label>
-
-            <label className="block">
-              <span className="text-sm font-medium">Zip Code</span>
-              <input
-                className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-                disabled={disabled}
-                {...form.register("zip_code")}
-              />
-            </label>
-          </div>
-        </div>
-        </div>
         </div>
       </div>
 

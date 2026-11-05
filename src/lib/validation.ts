@@ -189,30 +189,30 @@ export const profileSchema = z.object({
 
   school: z.string().min(2, "Please enter your school"),
   major: z.string().optional().or(z.literal("")),
-  grad_year: z.enum(gradYearOptions),
-  level_of_study: z.enum(levelOfStudyOptions),
+  grad_year: z.enum(gradYearOptions, { message: "Please select your graduation year" }),
+  level_of_study: z.enum(levelOfStudyOptions, { message: "Please select your level of study" }),
 
-  engineering_skill: z.enum(skillLevelOptions),
-  hackathon_experience: z.enum(hackathonExperienceOptions),
+  engineering_skill: z.enum(skillLevelOptions, { message: "Please select your skill level" }),
+  hackathon_experience: z.enum(hackathonExperienceOptions, { message: "Please select how many hackathons you've attended" }),
 
-  address_line1: z.string().optional().or(z.literal("")),
-  address_line2: z.string().optional().or(z.literal("")),
-  city: z.string().optional().or(z.literal("")),
-  state: z.string().optional().or(z.literal("")),
-  zip_code: z.string().optional().or(z.literal("")),
   country: z.string().min(2, "Please enter your country"),
 
   linkedin_url: z.string().url("Please enter a valid LinkedIn URL"),
 
-  tshirt: z.enum(tshirtOptions).optional(),
+  tshirt: z.enum(tshirtOptions).optional().or(z.literal("")),
   dietary: z.array(z.enum(dietaryOptions)),
   accessibility: z.string(),
 
-  gender: z.enum(genderOptions).optional(),
+  gender: z.enum(genderOptions).optional().or(z.literal("")),
   race: z.array(z.enum(raceOptions)).optional(),
 });
 
 export type ProfileFormValues = z.infer<typeof profileSchema>;
+
+/** Initial form values: selects may start blank ("") when we don't know the answer yet */
+export type ProfileFormDefaults = {
+  [K in keyof ProfileFormValues]: ProfileFormValues[K] | (ProfileFormValues[K] extends string | undefined ? "" : never);
+};
 
 export const registrationFlagsSchema = z.object({
   accuracy_agreement: z.boolean().refine(val => val === true, "You must agree to the accuracy statement"),
@@ -225,6 +225,29 @@ export const registrationFlagsSchema = z.object({
   mlh_communications: z.boolean().default(false),
 });
 export type RegistrationFlagsValues = z.infer<typeof registrationFlagsSchema>;
+
+/** True when a profiles row would pass profileSchema (used for the portal's draft checklist) */
+export function isProfileComplete(row: Record<string, unknown> | null | undefined): boolean {
+  if (!row) return false;
+  const arrays = new Set(["dietary", "race"]);
+  const values = Object.fromEntries(
+    Object.keys(profileSchema.shape).map(k => {
+      const v = row[k];
+      if (v !== null && v !== undefined) return [k, v];
+      return [k, arrays.has(k) ? [] : k === "accessibility" ? "" : undefined];
+    })
+  );
+  return profileSchema.safeParse(values).success;
+}
+
+/** True when every required consent is checked */
+export function hasRequiredConsents(row: Record<string, unknown> | null | undefined): boolean {
+  if (!row) return false;
+  const values = Object.fromEntries(
+    Object.keys(registrationFlagsSchema.shape).map(k => [k, row[k] === true])
+  );
+  return registrationFlagsSchema.safeParse(values).success;
+}
 
 /**
  * Free-response application questions. To add or remove a question, edit this list only:

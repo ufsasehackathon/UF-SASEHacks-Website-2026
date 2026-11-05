@@ -270,30 +270,6 @@ export default async function AdminUserDetailPage({
           <h2 className="text-lg font-semibold mb-4">Contact Information</h2>
           <div className="grid gap-4">
             <div>
-              <label className="text-sm font-medium text-gray-600">Address Line 1</label>
-              <p className="text-sm">{profile.address_line1 || "-"}</p>
-            </div>
-            {profile.address_line2 && (
-              <div>
-                <label className="text-sm font-medium text-gray-600">Address Line 2</label>
-                <p className="text-sm">{profile.address_line2}</p>
-              </div>
-            )}
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div>
-                <label className="text-sm font-medium text-gray-600">City</label>
-                <p className="text-sm">{profile.city || "-"}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-600">State</label>
-                <p className="text-sm">{profile.state || "-"}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-600">Zip Code</label>
-                <p className="text-sm">{profile.zip_code || "-"}</p>
-              </div>
-            </div>
-            <div>
               <label className="text-sm font-medium text-gray-600">Country</label>
               <p className="text-sm">{profile.country || "-"}</p>
             </div>

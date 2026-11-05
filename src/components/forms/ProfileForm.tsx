@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, type DefaultValues } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   profileSchema,
   type ProfileFormValues,
+  type ProfileFormDefaults,
   tshirtOptions,
   dietaryOptions,
   gradYearOptions,
@@ -24,7 +25,7 @@ import { searchSchools } from "@/lib/mlh-schools";
 import { searchCountries } from "@/lib/countries";
 
 type Props = {
-  initialValues: ProfileFormValues;
+  initialValues: ProfileFormDefaults;
   initialConsents?: {
     accuracy_agreement: boolean;
     terms_and_conditions: boolean;
@@ -54,7 +55,7 @@ export default function ProfileForm({ initialValues, initialConsents, action, di
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
-    defaultValues: initialValues,
+    defaultValues: initialValues as DefaultValues<ProfileFormValues>,
     mode: "onBlur",
   });
 
@@ -255,6 +256,7 @@ export default function ProfileForm({ initialValues, initialConsents, action, di
               disabled={disabled}
               {...form.register("grad_year")}
             >
+              <option value="">Select your graduation year</option>
               {gradYearOptions.map(year => (
                 <option key={year} value={year}>{year}</option>
               ))}
@@ -271,6 +273,7 @@ export default function ProfileForm({ initialValues, initialConsents, action, di
               disabled={disabled}
               {...form.register("level_of_study")}
             >
+              <option value="">Select your level of study</option>
               {levelOfStudyOptions.map(l => (
                 <option key={l} value={l}>{levelOfStudyLabels[l]}</option>
               ))}
@@ -296,6 +299,7 @@ export default function ProfileForm({ initialValues, initialConsents, action, di
               disabled={disabled}
               {...form.register("engineering_skill")}
             >
+              <option value="">Select your skill level</option>
               <option value="1">1 - Beginning</option>
               <option value="2">2 - Learning</option>
               <option value="3">3 - Somewhat Experienced</option>
@@ -314,6 +318,7 @@ export default function ProfileForm({ initialValues, initialConsents, action, di
               disabled={disabled}
               {...form.register("hackathon_experience")}
             >
+              <option value="">Number of hackathons attended</option>
               {hackathonExperienceOptions.map(num => (
                 <option key={num} value={num}>{num}</option>
               ))}
@@ -372,63 +377,6 @@ export default function ProfileForm({ initialValues, initialConsents, action, di
           </div>
         </div>
 
-        <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-          <h3 className="text-sm font-semibold text-gray-700 mb-1">Shipping Address (Optional)</h3>
-          <p className="text-xs text-gray-500 mb-4">
-            Only needed if we need to ship prizes, swag, or other materials to you.
-          </p>
-
-        <div className="grid gap-4">
-          <label className="block">
-            <span className="text-sm font-medium">Address Line 1</span>
-            <input
-              className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-              disabled={disabled}
-              placeholder="Street address"
-              {...form.register("address_line1")}
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-medium">Address Line 2</span>
-            <input
-              placeholder="Apt, suite, etc"
-              className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-              disabled={disabled}
-              {...form.register("address_line2")}
-            />
-          </label>
-
-          <div className="grid gap-4 sm:grid-cols-3">
-            <label className="block">
-              <span className="text-sm font-medium">City</span>
-              <input
-                className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-                disabled={disabled}
-                {...form.register("city")}
-              />
-            </label>
-
-            <label className="block">
-              <span className="text-sm font-medium">State</span>
-              <input
-                className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-                disabled={disabled}
-                {...form.register("state")}
-              />
-            </label>
-
-            <label className="block">
-              <span className="text-sm font-medium">Zip Code</span>
-              <input
-                className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-                disabled={disabled}
-                {...form.register("zip_code")}
-              />
-            </label>
-          </div>
-        </div>
-        </div>
         </div>
       </div>
 

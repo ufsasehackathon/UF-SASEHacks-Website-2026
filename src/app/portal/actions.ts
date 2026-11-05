@@ -70,21 +70,16 @@ export async function upsertProfile(_: unknown, formData: FormData) {
     last_name: lastName,
     email: String(formData.get("email") ?? ""),
     phone_number: String(formData.get("phone_number") ?? ""),
-    age: String(formData.get("age") ?? "18"),
+    age: String(formData.get("age") ?? ""),
 
     school: String(formData.get("school") ?? ""),
     major: String(formData.get("major") ?? ""),
-    grad_year: String(formData.get("grad_year") ?? "2026"),
-    level_of_study: String(formData.get("level_of_study") ?? "undergraduate-3-plus-year"),
+    grad_year: String(formData.get("grad_year") ?? ""),
+    level_of_study: String(formData.get("level_of_study") ?? ""),
 
-    engineering_skill: String(formData.get("engineering_skill") ?? "3"),
-    hackathon_experience: String(formData.get("hackathon_experience") ?? "0"),
+    engineering_skill: String(formData.get("engineering_skill") ?? ""),
+    hackathon_experience: String(formData.get("hackathon_experience") ?? ""),
 
-    address_line1: String(formData.get("address_line1") ?? ""),
-    address_line2: String(formData.get("address_line2") ?? ""),
-    city: String(formData.get("city") ?? ""),
-    state: String(formData.get("state") ?? ""),
-    zip_code: String(formData.get("zip_code") ?? ""),
     country: String(formData.get("country") ?? ""),
 
     linkedin_url: String(formData.get("linkedin_url") ?? ""),
@@ -99,7 +94,7 @@ export async function upsertProfile(_: unknown, formData: FormData) {
 
   const parsed = profileSchema.safeParse(values);
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.flatten().formErrors.join(", ") || "Validation failed" };
+    return { ok: false, error: parsed.error.issues[0]?.message || "Validation failed" };
   }
 
   // Compute full_name from first_name + last_name for backwards compatibility
@@ -199,9 +194,10 @@ export async function saveResponses(formData: FormData) {
   // Merge so answers to questions that were since removed from the form are kept
   const { data: reg } = await supabase
     .from("registrations")
-    .select("responses")
+    .select("responses, editing_locked")
     .eq("user_id", user.id)
     .single();
+  if (reg?.editing_locked) return { ok: false, error: "Editing is locked" };
 
   const { error } = await supabase
     .from("registrations")
@@ -209,6 +205,7 @@ export async function saveResponses(formData: FormData) {
     .eq("user_id", user.id);
 
   if (error) return { ok: false, error: error.message };
+  revalidatePath("/portal/profile");
   return { ok: true };
 }
 

@@ -1,6 +1,7 @@
-import { ensureRows, upsertProfileAndConsents } from "../actions";
+import { ensureRows, upsertProfileAndConsents, saveResponses } from "../actions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import ProfileForm from "@/components/forms/ProfileForm";
+import ResponsesForm from "@/components/forms/ResponsesForm";
 import { dietaryOptions, raceOptions } from "@/lib/validation";
 import Link from "next/link";
 
@@ -21,7 +22,7 @@ export default async function ProfilePage() {
 
   const { data: registration } = await supabase
     .from("registrations")
-    .select("editing_locked, accuracy_agreement, terms_and_conditions, code_of_conduct, can_photograph, share_resume_with_companies, mlh_code_of_conduct, mlh_data_sharing, mlh_communications")
+    .select("editing_locked, responses, accuracy_agreement, terms_and_conditions, code_of_conduct, can_photograph, share_resume_with_companies, mlh_code_of_conduct, mlh_data_sharing, mlh_communications")
     .eq("user_id", user.id)
     .single();
 
@@ -55,7 +56,7 @@ export default async function ProfilePage() {
       else if (age <= 44) initialAge = "35-44";
       else initialAge = "45+";
     } catch {
-      initialAge = "18";
+      initialAge = "";
     }
   }
 
@@ -103,28 +104,23 @@ export default async function ProfilePage() {
               last_name: initialLastName,
               email: profile?.email ?? user.email ?? "",
               phone_number: profile?.phone_number ?? "",
-              age: initialAge || "18",
+              age: initialAge,
               school: profile?.school ?? "",
               major: profile?.major ?? "",
-              grad_year: profile?.grad_year ?? "2026",
-              level_of_study: profile?.level_of_study ?? "undergraduate-3-plus-year",
-              engineering_skill: profile?.engineering_skill ?? "3",
-              hackathon_experience: profile?.hackathon_experience ?? "0",
-              address_line1: profile?.address_line1 ?? "",
-              address_line2: profile?.address_line2 ?? "",
-              city: profile?.city ?? "",
-              state: profile?.state ?? "",
-              zip_code: profile?.zip_code ?? "",
+              grad_year: profile?.grad_year ?? "",
+              level_of_study: profile?.level_of_study ?? "",
+              engineering_skill: profile?.engineering_skill ?? "",
+              hackathon_experience: profile?.hackathon_experience ?? "",
               country: profile?.country ?? "",
               linkedin_url: profile?.linkedin_url ?? "",
-              tshirt: profile?.tshirt ?? "M",
+              tshirt: profile?.tshirt ?? "",
               dietary: Array.isArray(profile?.dietary)
                 ? profile.dietary.filter((d: unknown): d is typeof dietaryOptions[number] =>
                     typeof d === 'string' && dietaryOptions.includes(d as typeof dietaryOptions[number])
                   )
                 : [],
               accessibility: profile?.accessibility ?? "",
-              gender: profile?.gender ?? "prefer-not-to-say",
+              gender: profile?.gender ?? "",
               race: Array.isArray(profile?.race)
                 ? profile.race.filter((r: unknown): r is typeof raceOptions[number] =>
                     typeof r === 'string' && raceOptions.includes(r as typeof raceOptions[number])
@@ -142,6 +138,14 @@ export default async function ProfilePage() {
               mlh_communications: !!registration?.mlh_communications,
             }}
             action={upsertProfileAndConsents}
+            disabled={disabled}
+          />
+        </div>
+
+        <div className="mt-6">
+          <ResponsesForm
+            initialResponses={(registration?.responses as Record<string, string> | null) ?? {}}
+            action={saveResponses}
             disabled={disabled}
           />
         </div>

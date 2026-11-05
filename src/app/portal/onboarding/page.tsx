@@ -68,7 +68,7 @@ export default async function OnboardingPage() {
       else if (age <= 44) initialAge = "35-44";
       else initialAge = "45+";
     } catch {
-      initialAge = "18";
+      initialAge = "";
     }
   }
 
@@ -119,30 +119,25 @@ export default async function OnboardingPage() {
           last_name: initialLastName,
           email: profile?.email ?? user.email ?? "",
           phone_number: profile?.phone_number ?? "",
-          age: initialAge || "18",
+          age: initialAge,
 
           school: profile?.school ?? "",
           major: profile?.major ?? "",
-          grad_year: profile?.grad_year ?? "2026",
-          level_of_study: profile?.level_of_study ?? "undergraduate-3-plus-year",
+          grad_year: profile?.grad_year ?? "",
+          level_of_study: profile?.level_of_study ?? "",
 
-          engineering_skill: profile?.engineering_skill ?? "3",
-          hackathon_experience: profile?.hackathon_experience ?? "0",
+          engineering_skill: profile?.engineering_skill ?? "",
+          hackathon_experience: profile?.hackathon_experience ?? "",
 
-          address_line1: profile?.address_line1 ?? "",
-          address_line2: profile?.address_line2 ?? "",
-          city: profile?.city ?? "",
-          state: profile?.state ?? "",
-          zip_code: profile?.zip_code ?? "",
           country: profile?.country ?? "",
 
           linkedin_url: profile?.linkedin_url ?? "",
 
-          tshirt: profile?.tshirt ?? "M",
+          tshirt: profile?.tshirt ?? "",
           dietary: profile?.dietary ?? [],
           accessibility: profile?.accessibility ?? "",
 
-          gender: profile?.gender ?? "prefer-not-to-say",
+          gender: profile?.gender ?? "",
           race: profile?.race ?? [],
         }}
         initialConsents={{

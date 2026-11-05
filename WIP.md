@@ -10,6 +10,7 @@ The code is built and `npm run lint` / `npm run build` pass. **None of it has be
 ## 1. Set up a test environment
 - [ ] Use a separate Supabase project for testing (recommended), or the real one before launch
 - [ ] Run `supabase/schema.sql` in the SQL editor
+  - Re-running it also drops the old shipping-address columns (`address_line1/2`, `city`, `state`, `zip_code`) from `profiles`
 - [ ] Make yourself admin (snippet at the bottom of `schema.sql`)
 - [ ] Supabase Auth → Providers: enable **Discord**. Create an app at discord.com/developers and use the redirect `https://<project>.supabase.co/auth/v1/callback`
 - [ ] Supabase Auth: enable **manual identity linking** (needed for "Connect Discord")
@@ -30,6 +31,9 @@ End to end, with two or three accounts, one of them admin:
 - [ ] Submit without a resume or without the required agreements → blocked
 - [ ] Submit → status `pending`, and the "application received" email arrives (needs Resend set up)
 - [ ] Free-response answer shows on `/admin/[userId]` and in the CSV export
+- [ ] Free-response answer can be edited on `/portal/profile` after submitting, and is read-only once editing is locked
+- [ ] Brand-new user: draft card says "Apply" (no checklist); the application form has only email prefilled, and submitting with age/grad year/level/skill/hackathons blank shows an error under each
+- [ ] Draft whose submit failed partway: card says "Continue application" with the checklist; declined/rejected cards link to the mailing list
 - [ ] Admin: score, then "Save & next unreviewed" moves to the next applicant
 - [ ] Admin: Accept → table shows "Queued" → "Send pending emails" → acceptance email arrives and the table shows "Yes"
 - [ ] Email user: "I'm coming" is disabled until Discord is connected → Connect Discord → username shows → confirm → `confirmed`
@@ -63,6 +67,5 @@ End to end, with two or three accounts, one of them admin:
 ## Known gaps / follow-ups
 - No "Save draft" button. Applicants fill out the form in one go. Adding one needs a looser validation schema.
 - RSVP expiry is a manual admin button, not on a schedule (could become a cron like the keep-alive workflow).
-- Applicants can't edit free-response answers after submitting (`/portal/profile` doesn't show them).
 - Discord bot to give confirmed hackers a role using `profiles.discord_id`: future work.
 - Roadmap items (schedule view, QR self check-in, teams, judging, staff dashboard): see CLAUDE.md.
