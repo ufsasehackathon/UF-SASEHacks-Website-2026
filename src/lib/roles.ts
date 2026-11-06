@@ -2,13 +2,6 @@
 export const roles = ["owner", "staff", "judge", "hacker"] as const;
 export type Role = typeof roles[number];
 
-export const roleLabels: Record<Role, string> = {
-  owner: "Owner",
-  staff: "Staff",
-  judge: "Judge",
-  hacker: "Hacker",
-};
-
 /** Where the header's "Dashboard" link sends each role */
 export const ROLE_HOME: Record<Role, string> = {
   owner: "/staff",

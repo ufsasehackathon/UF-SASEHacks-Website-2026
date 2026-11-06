@@ -12,7 +12,8 @@ export default async function OnboardingPage() {
     redirect("/login");
   }
 
-  await ensureRows();
+  // Opening the form is "clicking Apply": this creates their draft registration
+  await ensureRows({ withRegistration: registrationsOpen() });
 
   // Check if user has already completed onboarding
   const { data: profile } = await supabase

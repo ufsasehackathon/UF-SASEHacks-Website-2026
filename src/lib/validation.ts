@@ -251,8 +251,8 @@ export function hasRequiredConsents(row: Record<string, unknown> | null | undefi
 
 /**
  * Free-response application questions. To add or remove a question, edit this list only:
- * answers live in registrations.responses (jsonb) keyed by `id`, and the form, validation,
- * admin detail page and CSV export all read from here. Removing a question hides its old
+ * answers live in registrations.responses (jsonb) keyed by `id`, and the form and validation
+ * read from here. Removing a question hides its old
  * answers but keeps them in the database. Don't reuse an old `id` for a different question.
  */
 export const APPLICATION_QUESTIONS = [
@@ -295,7 +295,7 @@ export const registrationStatuses = [
 export type RegistrationStatus = typeof registrationStatuses[number];
 
 export const registrationStatusLabels: Record<RegistrationStatus, string> = {
-  draft: "Not submitted",
+  draft: "Started, not submitted",
   pending: "Under review",
   accepted: "Accepted (awaiting RSVP)",
   confirmed: "Confirmed attending",

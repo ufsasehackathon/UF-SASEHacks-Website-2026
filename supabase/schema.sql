@@ -1,6 +1,6 @@
 -- SASEHacks full schema + security hardening.
 -- Run in the Supabase SQL editor of the project. Safe to re-run.
--- Then sign up in the app and make yourself admin (snippet at the bottom).
+-- Then sign up in the app and make yourself owner (role snippet at the bottom).
 -- Written for a fresh project. If the old standalone check-in tables (hackers, workshop_attendees,
 -- or the old attendance with hacker_id) exist, drop them first: they are replaced by `attendance` below.
 
@@ -143,7 +143,7 @@ create table if not exists public.attendance (
 
 insert into public.events (event_name) values ('Check-in') on conflict (event_name) do nothing;
 
--- judging: projects come from the Devpost CSV import (upsert on devpost_url)
+-- judging: projects (no app code yet; devpost_url is unique so an import can upsert on it)
 create table if not exists public.projects (
   id uuid primary key default gen_random_uuid(),
   title text not null,
@@ -163,7 +163,7 @@ create table if not exists public.judge_assignments (
   primary key (judge_id, project_id)
 );
 
--- one score sheet per judge per project; scores is keyed by JUDGING_CRITERIA id (1-5 each)
+-- one score sheet per judge per project; scores is jsonb keyed by criterion id (no app code yet)
 create table if not exists public.judge_scores (
   judge_id uuid not null references public.profiles(id) on delete cascade,
   project_id uuid not null references public.projects(id) on delete cascade,
@@ -234,7 +234,7 @@ as $$
   select exists (select 1 from public.user_roles where user_id = p_uid and role = 'judge');
 $$;
 
--- Legacy name for is_owner: the guards, RLS policies and admin actions all call it
+-- Legacy name for is_owner: the guards and most RLS policies call it
 create or replace function public.is_admin(p_uid uuid)
 returns boolean
 language sql
@@ -619,7 +619,7 @@ revoke all on function public.sync_discord_profile() from public;
 grant execute on function public.sync_discord_profile() to authenticated;
 
 -- After the app emails a hacker about their own status change (application received, RSVP),
--- record it so the admin "send pending emails" queue doesn't send it again. Worst case a user
+-- record it so a future decision-email queue doesn't send it again. Worst case a user
 -- can only suppress their own email.
 create or replace function public.mark_own_status_emailed(p_status text)
 returns void
@@ -1030,14 +1030,20 @@ select pg_notify('pgrst', 'reload schema');
 -- ---------------------------------------------------------------------------
 -- Not executed automatically
 -- ---------------------------------------------------------------------------
--- Make the first owner (UUID from Dashboard > Authentication > Users). After that, owners
--- change roles from /staff/roles:
+-- Give someone a role (UUID from Dashboard > Authentication > Users). There's no role UI yet,
+-- so this is how owners, staff and judges are set. Use 'owner', 'staff' or 'judge';
+-- to make someone a hacker again, delete their user_roles row.
 --   insert into public.profiles (id, email, full_name)
 --   values ('PASTE_USER_ID', 'PASTE_EMAIL', 'PASTE_NAME') on conflict (id) do nothing;
 --   insert into public.user_roles (user_id, role) values ('PASTE_USER_ID', 'owner')
 --   on conflict (user_id) do update set role = excluded.role;
---   insert into public.registrations (user_id) values ('PASTE_USER_ID') on conflict (user_id) do nothing;
 --   select public.user_role('PASTE_USER_ID');  -- expect 'owner'
+--
+-- Optional one-time cleanup: before registrations were created on "Apply", every portal visit
+-- (including staff and judges) created a draft. This deletes drafts with nothing saved in them:
+--   delete from public.registrations
+--   where status = 'draft' and resume_url is null and responses = '{}'::jsonb
+--     and not coalesce(accuracy_agreement, false);
 --
 -- Assign a project to a judge (no UI yet; distribution is still being decided):
 --   insert into public.judge_assignments (judge_id, project_id)

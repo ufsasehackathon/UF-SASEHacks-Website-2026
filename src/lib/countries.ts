@@ -222,13 +222,3 @@ export function searchCountries(query: string, limit = 10): Country[] {
     )
     .slice(0, limit);
 }
-
-// Get country by code
-export function getCountryByCode(code: string): Country | undefined {
-  return countries.find(country => country.code === code);
-}
-
-// Get country by name
-export function getCountryByName(name: string): Country | undefined {
-  return countries.find(country => country.name.toLowerCase() === name.toLowerCase());
-}

@@ -3,6 +3,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import ProfileForm from "@/components/forms/ProfileForm";
 import { dietaryOptions, raceOptions } from "@/lib/validation";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 export default async function ProfilePage() {
   await ensureRows();
@@ -23,7 +24,9 @@ export default async function ProfilePage() {
     .from("registrations")
     .select("editing_locked, accuracy_agreement, terms_and_conditions, code_of_conduct, can_photograph, share_resume_with_companies, mlh_code_of_conduct, mlh_data_sharing, mlh_communications")
     .eq("user_id", user.id)
-    .single();
+    .maybeSingle();
+  // Nothing to edit until they've applied (the application form handles drafts)
+  if (!registration) redirect("/portal");
 
   const disabled = registration?.editing_locked ?? false;
 

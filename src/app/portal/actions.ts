@@ -7,7 +7,12 @@ import { saveResume } from "@/lib/resume";
 import { statusEmail, sendEmailBatch } from "@/lib/email";
 import { registrationsOpen } from "@/lib/constants";
 
-export async function ensureRows() {
+/**
+ * Create the caller's profile row if missing. The registration (application) row is only created
+ * when they start an application (`withRegistration`, used by /portal/onboarding), so visiting
+ * the portal, or being staff/a judge, doesn't count as starting one.
+ */
+export async function ensureRows({ withRegistration = false }: { withRegistration?: boolean } = {}) {
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, reason: "not_authenticated" };
@@ -34,15 +39,17 @@ export async function ensureRows() {
     });
   }
 
-  // registrations
-  const { data: reg } = await supabase
-    .from("registrations")
-    .select("user_id")
-    .eq("user_id", user.id)
-    .single();
+  // registrations: only once they click Apply
+  if (withRegistration) {
+    const { data: reg } = await supabase
+      .from("registrations")
+      .select("user_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
 
-  if (!reg) {
-    await supabase.from("registrations").insert({ user_id: user.id });
+    if (!reg) {
+      await supabase.from("registrations").insert({ user_id: user.id });
+    }
   }
 
   // Copy a linked Discord account onto the profile (covers both Discord login and linking later)
@@ -211,21 +218,18 @@ export async function saveResponses(formData: FormData) {
 
 /**
  * Email the caller about their current status (application received / RSVP) and mark it sent.
- * Failures are logged, not surfaced: the admin email queue will retry anything unsent.
+ * Failures are logged, not surfaced, and nothing retries them yet: last_emailed_status stays
+ * behind, so a future email queue can find unsent rows.
  */
 async function emailOwnStatus(userId: string) {
   const supabase = await createSupabaseServerClient();
   const [{ data: reg }, { data: profile }] = await Promise.all([
-    supabase.from("registrations").select("status, rsvp_deadline, last_emailed_status").eq("user_id", userId).single(),
+    supabase.from("registrations").select("status, last_emailed_status").eq("user_id", userId).single(),
     supabase.from("profiles").select("email, first_name").eq("id", userId).single(),
   ]);
   if (!reg || !profile?.email || reg.last_emailed_status === reg.status) return;
 
-  const msg = statusEmail(reg.status, {
-    firstName: profile.first_name,
-    rsvpDeadline: reg.rsvp_deadline,
-    previousEmailedStatus: reg.last_emailed_status,
-  });
+  const msg = statusEmail(reg.status, { firstName: profile.first_name });
   if (!msg) return;
 
   const sent = await sendEmailBatch([{ to: profile.email, ...msg }]);

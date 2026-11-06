@@ -1,5 +1,4 @@
 import { HACK_NAME, DATES, VENUE, CITY, DISCORD_INVITE, SITE_URL, DECISIONS_BY } from "@/lib/constants";
-import type { RegistrationStatus } from "@/lib/validation";
 
 // Sent through Resend's HTTP API (https://resend.com/docs/api-reference/emails/send-batch-emails).
 // Env: RESEND_API_KEY, EMAIL_FROM (e.g. "SASEHacks <team@sasehacks.com>", on a domain verified
@@ -7,24 +6,9 @@ import type { RegistrationStatus } from "@/lib/validation";
 
 export type OutgoingEmail = { to: string; subject: string; html: string };
 
-type StatusEmailContext = {
-  firstName: string | null;
-  rsvpDeadline: string | null;
-  /** status we last emailed them about, used to word waitlist promotions */
-  previousEmailedStatus: string | null;
-};
+type StatusEmailContext = { firstName: string | null };
 
-/** Statuses that get an email. draft never does. */
-export const EMAILED_STATUSES: RegistrationStatus[] = [
-  "pending",
-  "accepted",
-  "confirmed",
-  "declined",
-  "waitlist",
-  "rejected",
-];
-
-export function emailConfigured() {
+function emailConfigured() {
   return Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
 }
 
@@ -45,19 +29,12 @@ function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 }
 
-function formatDeadline(iso: string | null) {
-  if (!iso) return null;
-  return new Date(iso).toLocaleString("en-US", {
-    timeZone: "America/New_York",
-    dateStyle: "full",
-    timeStyle: "short",
-  }) + " ET";
-}
-
-/** Subject + body for a status, or null when that status doesn't send an email */
+/**
+ * Subject + body for the hacker-triggered status emails (application received, RSVP confirm/decline),
+ * or null for any other status. Decision emails (accept/waitlist/reject) aren't built yet.
+ */
 export function statusEmail(status: string, ctx: StatusEmailContext): { subject: string; html: string } | null {
   const portal = `${SITE_URL}/portal`;
-  const deadline = formatDeadline(ctx.rsvpDeadline);
 
   switch (status) {
     case "pending":
@@ -67,17 +44,6 @@ export function statusEmail(status: string, ctx: StatusEmailContext): { subject:
 <p>Decisions go out by ${DECISIONS_BY}. You can check your status any time in the portal.</p>
 ${button(portal, "Open the portal")}`),
       };
-    case "accepted": {
-      const opener = ctx.previousEmailedStatus === "waitlist"
-        ? `<p>Good news: a spot opened up and you're off the waitlist. You're accepted to ${HACK_NAME}! 🎉</p>`
-        : `<p>Congratulations, you're accepted to ${HACK_NAME}! 🎉</p>`;
-      return {
-        subject: `You're accepted to ${HACK_NAME}! Please RSVP`,
-        html: layout(ctx.firstName, `${opener}
-<p>To hold your spot, connect your Discord account and confirm you're coming in the portal${deadline ? ` by <strong>${deadline}</strong>` : ""}. Spots that aren't confirmed in time go to the waitlist.</p>
-${button(portal, "RSVP now")}`),
-      };
-    }
     case "confirmed":
       return {
         subject: `You're confirmed for ${HACK_NAME}`,
@@ -89,20 +55,8 @@ ${button(DISCORD_INVITE, "Join the Discord")}
     case "declined":
       return {
         subject: `Your ${HACK_NAME} spot has been released`,
-        html: layout(ctx.firstName, `<p>Your spot at ${HACK_NAME} has been released, either because you let us know you can't make it or because the RSVP deadline passed.</p>
+        html: layout(ctx.firstName, `<p>Thanks for letting us know you can't make it. Your spot at ${HACK_NAME} has been released.</p>
 <p>We're sorry to miss you this time and hope to see you at a future event.</p>`),
-      };
-    case "waitlist":
-      return {
-        subject: `${HACK_NAME} application update: waitlist`,
-        html: layout(ctx.firstName, `<p>Thank you for applying to ${HACK_NAME}. We had more applicants than spots, and you're currently on our waitlist.</p>
-<p>Spots open up as accepted hackers RSVP, so we'll email you right away if one becomes available.</p>`),
-      };
-    case "rejected":
-      return {
-        subject: `${HACK_NAME} application update`,
-        html: layout(ctx.firstName, `<p>Thank you for applying to ${HACK_NAME}. We had far more applicants than spots this year, and unfortunately we can't offer you a place.</p>
-<p>We'd love to see you apply again next year.</p>`),
       };
     default:
       return null;

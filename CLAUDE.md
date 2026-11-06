@@ -57,7 +57,7 @@ The two `NEXT_PUBLIC_*_ENABLED` flags are set per environment: on in local `.env
 
 Without `RESEND_API_KEY`/`EMAIL_FROM`, emails are skipped (logged) and stay queued; nothing else breaks.
 
-The full database schema (tables, functions, triggers, RLS, storage bucket + policies, indexes) is in `supabase/schema.sql`. It is applied by hand in the Supabase SQL editor (no migration tooling) and is written to be safe to re-run. Keep it in sync with any DB change you make in the dashboard. The bottom of the file has commented-out snippets for granting the first owner, assigning judges to projects, and testing the guards.
+The full database schema (tables, functions, triggers, RLS, storage bucket + policies, indexes) is in `supabase/schema.sql`. It is applied by hand in the Supabase SQL editor (no migration tooling) and is written to be safe to re-run. Keep it in sync with any DB change you make in the dashboard. The bottom of the file has commented-out snippets for giving someone a role, assigning judges to projects, and testing the guards.
 
 ## Architecture
 
@@ -70,19 +70,18 @@ Supabase dashboard config (not in code): Discord provider enabled, Site URL/redi
 `middleware.ts` runs on every request except `_next/static`, `_next/image`, `favicon.ico`, and `api/faq`, and calls `supabase.auth.getUser()` purely to refresh the session cookie. Actual route protection is NOT done in middleware — it's done per-layout:
 
 - `src/app/portal/layout.tsx` — redirects to `/login` if unauthenticated.
-- `src/app/admin/layout.tsx` — redirects to `/login` if unauthenticated, then calls the `is_admin(p_uid)` Postgres RPC (= owner) and redirects to `/portal` otherwise.
-- `src/app/staff/layout.tsx` — owner or staff, else `/portal`. `staff/roles` and `staff/judging` pages additionally redirect non-owners to `/staff`.
+- `src/app/staff/layout.tsx` — owner or staff, else `/portal`.
 - `src/app/judge/layout.tsx` — judge or owner, else `/portal`.
 
-Every server action re-checks the caller's role itself (defense in depth): admin actions via `is_admin`, staff/judge actions via `requireRole([...])` from `src/lib/session.ts`. Don't assume the layout check is sufficient when adding new actions/routes.
+Every server action must re-check the caller's role itself (defense in depth), e.g. with `getCurrentRole()` from `src/lib/session.ts`. Don't assume the layout check is sufficient when adding new actions/routes.
 
 ### Roles
 
-Four roles: **owner** (everything: application review in `/admin`, the staff dashboard, role changes, judging results), **staff** (stats, hacker lookup, check-in), **judge** (scores assigned projects), **hacker** (no `user_roles` row; the default, gets `/portal`). One role per user.
-- `src/lib/roles.ts` — constants only (`roles`, `roleLabels`, `ROLE_HOME`: owner/staff → `/staff`, judge → `/judge`, hacker → `/portal`), safe for client components.
-- `src/lib/session.ts` — server-only: `getCurrentRole()` (user + role via the `user_role` RPC) and `requireRole(allowed)` for actions.
+Four roles: **owner** (`/staff` dashboard; will own application review once it's redesigned), **staff** (`/staff` dashboard), **judge** (`/judge` dashboard), **hacker** (no `user_roles` row; the default, gets `/portal`). One role per user. The owner/staff/judge dashboards are placeholders for now (see below); the DB side (RPCs, RLS, judging tables) is in place for when they're designed.
+- `src/lib/roles.ts` — constants only (`roles`, `ROLE_HOME`: owner/staff → `/staff`, judge → `/judge`, hacker → `/portal`), safe for client components.
+- `src/lib/session.ts` — server-only: `getCurrentRole()` (user + role via the `user_role` RPC).
 - The header has a single "Dashboard" link (outlined, like Login/Sign Out) to `ROLE_HOME[role]`.
-- Roles change only through the `set_user_role` RPC (from `/staff/roles`). The first owner is granted with the SQL snippet at the bottom of `schema.sql`. Someone must sign in once (so they have a `profiles` row) before they can be given a role.
+- There's no role UI yet: roles are set with the SQL snippet at the bottom of `schema.sql`. The `set_user_role` RPC (owner-only, protects the last owner) exists for a future UI. Someone must sign in once (so they have a `profiles` row) before they can be given a role.
 
 ### Data model (source of truth: `supabase/schema.sql`)
 
@@ -90,40 +89,38 @@ Tables (all in `public`, all with RLS enabled):
 - `profiles` — keyed by `id` → `auth.users(id)` (cascade). Personal/demographic info: `full_name`, `first_name`, `last_name`, `email` (unique; where status emails go, editable on the form), `phone_number`, `date_of_birth`, `age`, `school`, `major`, `grad_year`, `level_of_study`, `engineering_skill`, `hackathon_experience`, `linkedin_url`, `country`, `tshirt`, `dietary text[]`, `accessibility`, `gender`, `race text[]`, `discord_id` (unique)/`discord_username` (set only by `sync_discord_profile`), `created_at`/`updated_at`.
 - `registrations` — keyed by `user_id` → `profiles(id)` (cascade). `status` (check-constrained, default `draft`, see lifecycle below), `editing_locked`, admin-only `notes`/`review_score` (1–5)/`reviewed_by`, lifecycle timestamps (`submitted_at`, `accepted_at`, `rsvp_deadline`, `rsvp_at`), `last_emailed_status` (email queue marker), `responses jsonb` (free-response answers keyed by question id), consent flags (`accuracy_agreement`, `terms_and_conditions`, `code_of_conduct`, `can_photograph`, `share_resume_with_companies`, `mlh_code_of_conduct`, `mlh_data_sharing`, `mlh_communications`), resume fields (`resume_url`, `resume_updated_at`), timestamps.
 - `settings` — single row (`id = true`). `applications_close`, enforced by `submit_application()`. Keep it in sync with `APPLICATIONS_CLOSE` in `src/lib/constants.ts`. Readable by signed-in users, writable by admins.
-- `user_roles` — `(user_id, role)` PK plus a unique index on `user_id` (one role per user); `role` is constrained to `'owner'`, `'staff'` or `'judge'` (no row = hacker). Re-running `schema.sql` migrates old `admin` rows to `owner` and deletes `sponsor` rows. Users can read their own row, staff and owners can read all (so check-in lookup can exclude non-hackers); there are no write policies (writes go through `set_user_role`).
+- `user_roles` — `(user_id, role)` PK plus a unique index on `user_id` (one role per user); `role` is constrained to `'owner'`, `'staff'` or `'judge'` (no row = hacker). Re-running `schema.sql` migrates old `admin` rows to `owner` and deletes `sponsor` rows. Users can read their own row, staff and owners can read all; there are no write policies (writes go through `set_user_role` or the SQL editor).
 - `events` — `event_name` (unique), `self_checkin_open`, `checkin_code` (random, embedded in a QR for self check-in). A `Check-in` event (main event check-in) is seeded. Owners have full access; staff can read.
-- `attendance` — one row per `(user_id, event_id)` (unique) = "this person attended this event"; `checked_in_by` defaults to `auth.uid()`. Users can read their own rows; staff can read all; owners have full access. Staff check-in writes go through `staff_check_in`.
-- `projects` — `title`, `devpost_url` (unique, the import upsert key), `track`, `table_number`, `description`, `team`. Filled by the Devpost CSV import on `/staff/judging`. Owners have full access; judges can read only projects assigned to them.
+- `attendance` — one row per `(user_id, event_id)` (unique) = "this person attended this event"; `checked_in_by` defaults to `auth.uid()`. Users can read their own rows; staff can read all; owners have full access. Staff check-in writes go through `staff_check_in` (not called by the app yet).
+- `projects` — `title`, `devpost_url` (unique, the import upsert key), `track`, `table_number`, `description`, `team`. No app code yet (a Devpost CSV import was built and removed until the dashboards are designed). Owners have full access; judges can read only projects assigned to them.
 - `judge_assignments` — `(judge_id, project_id)` PK. **No UI yet** (how to distribute projects is still being decided); assign with the SQL snippet at the bottom of `schema.sql`. Owners full access, judges read their own.
-- `judge_scores` — `(judge_id, project_id)` PK, `scores jsonb` keyed by `JUDGING_CRITERIA` id (1–5 each), `comments`, `updated_at`. Judges read/write only their own sheets for assigned projects; owners full access.
+- `judge_scores` — `(judge_id, project_id)` PK, `scores jsonb` keyed by criterion id (no app code yet), `comments`, `updated_at`. Judges read/write only their own sheets for assigned projects; owners full access.
 - `mailing_list` — `email` (unique on `lower(email)`), `created_at`. Filled from the hero's `MailingListForm` (`src/components/MailingListForm.tsx`) via `joinMailingList` in `src/app/actions.ts` (no account needed; duplicate signups are treated as success). RLS: anyone (`anon`/`authenticated`) can insert, only admins can read/modify.
 
 #### Application lifecycle (`registrations.status`)
 
 | status | meaning | set by |
 |---|---|---|
-| `draft` | row exists, not submitted | `ensureRows()` (insert guard forces it) |
+| `draft` | clicked Apply, not submitted ("Started, not submitted") | `ensureRows({ withRegistration: true })` on `/portal/onboarding` (insert guard forces it) |
 | `pending` | submitted, awaiting review (always has `submitted_at`; `schema.sql` resets `pending` rows without one, left over from the old `pending` default, to `draft`) | `submit_application()` RPC |
-| `accepted` | offered a spot, must RSVP by `rsvp_deadline` | admin (`setStatus` stamps `accepted_at` + `RSVP_WINDOW_DAYS`) |
-| `confirmed` | RSVP'd yes (attending) | `rsvp(true)` RPC (needs a linked Discord identity) or admin |
-| `declined` | RSVP'd no, dropped out, or RSVP expired | `rsvp(false)` / admin "Expire overdue RSVPs" |
-| `waitlist` | waitlisted | admin; "Promote N" accepts top by score, then submission time |
-| `rejected` | rejected | admin |
+| `accepted` | offered a spot, must RSVP by `rsvp_deadline` | owner (SQL for now; no review UI yet) |
+| `confirmed` | RSVP'd yes (attending) | `rsvp(true)` RPC (needs a linked Discord identity) or owner |
+| `declined` | RSVP'd no, dropped out, or RSVP expired | `rsvp(false)` / owner |
+| `waitlist` | waitlisted | owner |
+| `rejected` | rejected | owner |
 
-`confirmed` means attending, which is what `self_check_in` requires. Status labels and the ordered list live in `src/lib/validation.ts` (`registrationStatuses`, `registrationStatusLabels`).
+`confirmed` means attending, which is what `self_check_in` requires. **There's no application review/decision UI right now** (the old `/admin` was removed to be redesigned): until it's rebuilt, decisions are made by updating `registrations.status` in the SQL editor (set `accepted_at`/`rsvp_deadline` when accepting). Status labels and the ordered list live in `src/lib/validation.ts` (`registrationStatuses`, `registrationStatusLabels`).
 
 #### Email (`src/lib/email.ts`)
 
-Sent through Resend's batch HTTP API with `fetch` (no SDK). `statusEmail(status, ctx)` holds the template for each status. Two paths:
-- Hacker-triggered (application received, RSVP confirm/decline): sent immediately by `emailOwnStatus` in `src/app/portal/actions.ts`, then marked via the `mark_own_status_emailed` RPC.
-- Admin decisions are **not** emailed when made. `sendPendingEmails()` (the "Send pending emails" button) emails every row where `status <> last_emailed_status` in an emailed status, at most `EMAIL_DAILY_CAP` per click (Resend free plan = 100/day). Rows are marked only after their batch succeeds, so re-running is safe. A failed immediate send just stays in this queue.
+Sent through Resend's batch HTTP API with `fetch` (no SDK). `statusEmail(status, ctx)` holds templates for the hacker-triggered emails only (application received, RSVP confirm/decline). They're sent immediately by `emailOwnStatus` in `src/app/portal/actions.ts`, then marked via the `mark_own_status_emailed` RPC. A failed send is logged and not retried; `last_emailed_status` stays behind, so a future queue can find it. Decision emails (accept/waitlist/reject) don't exist yet; they belong to the review redesign.
 
-Main-event check-in is used by the staff dashboard (`staff_check_in`). Workshop events and QR `self_check_in` exist in the DB but are **not used by the app code yet** (see Roadmap).
+Main-event check-in (`staff_check_in`), workshop events and QR `self_check_in` exist in the DB but are **not used by the app code yet** (see Roadmap).
 
 Functions (RPCs):
 - `user_role(p_uid)` — returns `'owner'`/`'staff'`/`'judge'`, or `'hacker'` when there's no row.
 - `is_owner(p_uid)`, `is_staff(p_uid)` (owner or staff), `is_judge(p_uid)` — `security definer` role checks used by RLS.
-- `is_admin(p_uid)` — **legacy name for `is_owner`**. Kept because the guards, most RLS policies and the admin layout/actions call it; "admin" in code means owner.
+- `is_admin(p_uid)` — **legacy name for `is_owner`**. Kept because the guards and most RLS policies call it; "admin" in the schema means owner.
 - `set_user_role(p_user_id, p_role)` — owner-only. `'hacker'` deletes the row. Refuses to remove the last owner.
 - `staff_check_in(p_user_id)` / `staff_undo_check_in(p_user_id)` — staff/owner only, on the seeded `Check-in` event. Check-in requires `status = 'confirmed'`; idempotent.
 - `self_check_in(p_code)` — lets an authenticated user check themselves into an event whose `self_checkin_open` is true and whose `checkin_code` matches. Requires `registrations.status = 'confirmed'`. Idempotent. Returns the event name. Attendees have no direct insert access to `attendance`, so this is the only path for them.
@@ -144,38 +141,24 @@ DB-enforced guards (triggers). These apply only to non-admin callers with a JWT.
 
 So the app-side checks are not the only line of defense, but don't rely on the DB alone either — keep the server-action checks.
 
-Resumes are required to submit. Upload validation (10 MB, PDF signature check) and storage live in one helper, `saveResume()` in `src/lib/resume.ts`, used by both the onboarding form and `/portal/resume`. They are stored in the private `resumes` Supabase Storage bucket at the fixed path `{user_id}/resume.pdf` (always this exact filename — uploads use `upsert: true` to overwrite). Storage policies only let a user write `.pdf` files under their own `{user_id}/` prefix, and only the owner or an admin can read them. Signed URLs are generated on demand (short-lived, 300s for single admin view, 3600s for bulk export) rather than using public URLs. General images (landing page assets) are served locally from `public/images/`, referenced via `getPublicImageUrl()` in `src/lib/images.ts`.
+Resumes are required to submit. Upload validation (10 MB, PDF signature check) and storage live in one helper, `saveResume()` in `src/lib/resume.ts`, used by both the onboarding form and `/portal/resume`. They are stored in the private `resumes` Supabase Storage bucket at the fixed path `{user_id}/resume.pdf` (always this exact filename — uploads use `upsert: true` to overwrite). Storage policies only let a user write `.pdf` files under their own `{user_id}/` prefix, and only the owner or an admin can read them. Hackers download their own resume through a short-lived signed URL rather than a public URL. General images (landing page assets) are served locally from `public/images/`, referenced via `getPublicImageUrl()` in `src/lib/images.ts`.
 
-`ensureRows()` in `src/app/portal/actions.ts` lazily creates a user's `profiles`/`registrations` rows on first portal visit if they don't already exist (rather than doing it at signup time).
+`ensureRows()` in `src/app/portal/actions.ts` lazily creates a user's `profiles` row on portal visits. The `registrations` row is only created when they start an application (`ensureRows({ withRegistration: true })`, called by `/portal/onboarding` while applications are open), so portal visits, staff and judges don't count as applicants. No registration row = "Not started". `/portal/profile` and `/portal/resume` redirect to `/portal` until a registration exists.
 
 ### Hacker portal flow
 
 - The header (`Header.tsx` → `HeaderClient.tsx`) shows a "Dashboard" link to `/portal` for any signed-in user (desktop button + mobile menu).
-- `/portal` always renders for a logged-in user (no redirect home). One main card is driven by `registrations.status`: a draft shows time left and an "Apply" link, which becomes "Continue application" plus a Profile/Agreements/Resume checklist (`isProfileComplete`/`hasRequiredConsents` in `validation.ts`) once any of those is saved (or "Applications are closed"); pending shows submission date and `DECISIONS_BY`; accepted shows `RsvpButtons` (Step 1 Connect Discord, Step 2 confirm/decline); confirmed shows event info plus a drop-out link; waitlist/declined/rejected show a message (declined/rejected/closed also link to the hero mailing list, `/#mailing-list`). Edit Profile/Resume cards are hidden while in draft.
+- `/portal` always renders for a logged-in user (no redirect home). One main card is driven by `registrations.status`: with no registration row it shows time left and an "Apply" link; a draft (they clicked Apply) shows "Continue application" plus a Profile/Agreements/Resume checklist (`isProfileComplete`/`hasRequiredConsents` in `validation.ts`) (or "Applications are closed"); pending shows submission date and `DECISIONS_BY`; accepted shows `RsvpButtons` (Step 1 Connect Discord, Step 2 confirm/decline); confirmed shows event info plus a drop-out link; waitlist/declined/rejected show a message (declined/rejected/closed also link to the hero mailing list, `/#mailing-list`). Edit Profile/Resume cards are hidden while in draft.
 - `/portal/profile` edits the profile + consents (`ProfileForm`), read-only once `editing_locked`. Free-response answers are **not** editable after submitting: `saveResponses` only works in `draft`, and the DB guard blocks non-admin changes to `responses` once status leaves `draft`.
 - `/portal/onboarding` is the application form. It's only reachable in `draft` (otherwise it redirects to `/portal`). "Submit Application" saves profile → consents → resume (optional if one is already on file) → free-response answers, then calls `submitApplication()`.
 
-### Admin review flow (`/admin`, owner only)
+### Owner / staff / judge dashboards (placeholders)
 
-- `/admin` shows counts per status (from `fetchStatusCounts`, independent of filters), spots left (`EVENT_CAPACITY − accepted − confirmed`), and `DecisionTools` (expire overdue RSVPs, promote N from waitlist, send pending emails). The table filters by status, sorts by newest/submission order/score, and bulk-sets Accept/Waitlist/Reject.
-- `/admin/[userId]` has `ReviewForm`: 1–5 score, notes, "Save & next unreviewed" (oldest pending with no score), and accept/waitlist/reject buttons. It also shows free-response answers, Discord, and lifecycle timestamps.
-
-### Staff dashboard (`/staff`, owner + staff)
-
-- `page.tsx`: stats (`fetchStaffStats`: counts per status, checked in vs confirmed, spots left, t-shirt/dietary totals and accessibility-note count for confirmed hackers) and `HackerLookup` (search name/email/Discord as you type, check in / undo; only confirmed hackers can be checked in). `lookupHackers` returns hackers only by default; `RoleManager` passes `includeAllRoles` so owners can find staff/judges/owners too. Owners also see links to `/admin`, Roles and Judging.
-- `roles/page.tsx` (owner): `RoleManager` searches people and sets roles with a dropdown, and lists current owners/staff/judges.
-- `judging/page.tsx` (owner): `DevpostImport` (CSV → `importDevpostCsv`, parsed with `papaparse`; maps "Project Title", "Submission Url", "Opt-In Prizes", "About The Project", submitter/team-member names, and any column containing "table"; skips drafts), a projects table ranked by average total with inline table numbers, and each judge's score sheets.
-- Actions live in `src/app/staff/actions.ts`; staff actions check `requireRole(["owner","staff"])`, roles/judging actions `requireRole(["owner"])`.
-
-### Judge dashboard (`/judge`, judge + owner)
-
-- `page.tsx`: the caller's assigned projects (unscored first, then by table number) with scored badges.
-- `[projectId]/page.tsx`: project details plus `ScoreForm` (1–5 per criterion, comments, "Save & next unscored"). `saveScore` in `src/app/judge/actions.ts` re-checks the role and the assignment; RLS enforces it too.
-- **Rubric is config-driven:** edit only `JUDGING_CRITERIA` in `src/lib/judging.ts` (`id`, `label`, `description`). Scores are stored keyed by `id`, the form/validation/owner results loop over the list, and `totalScore` ignores criteria that were removed. Never reuse an old `id`.
+`/staff` (owner + staff; titled "Owner Dashboard" or "Staff Dashboard" by role) and `/judge` (judge + owner) are intentionally empty "Coming soon" pages using `PageShell` (`src/components/PageShell.tsx`) until the layout is decided. Their layouts still enforce the role checks, and the header's "Dashboard" link still routes there. Keep these pages lean: add features only once they're designed.
 
 ### Server actions pattern
 
-Mutations live in colocated `actions.ts` files (`src/app/admin/actions.ts`, `src/app/staff/actions.ts`, `src/app/judge/actions.ts`, `src/app/portal/actions.ts`, `src/app/portal/resume/actions.ts`) marked `"use server"` (these files may only export async functions and types). Each action independently re-fetches the authenticated user via `createSupabaseServerClient()` and re-checks authorization — there is no shared middleware-level guard for mutations. Actions return `{ ok: boolean, error?: string, ... }` rather than throwing, and call `revalidatePath(...)` on the affected route(s) after a successful mutation instead of relying on client-side refresh.
+Mutations live in colocated `actions.ts` files (`src/app/actions.ts`, `src/app/portal/actions.ts`, `src/app/portal/resume/actions.ts`) marked `"use server"` (these files may only export async functions and types). Each action independently re-fetches the authenticated user via `createSupabaseServerClient()` and re-checks authorization — there is no shared middleware-level guard for mutations. Actions return `{ ok: boolean, error?: string, ... }` rather than throwing, and call `revalidatePath(...)` on the affected route(s) after a successful mutation instead of relying on client-side refresh.
 
 Two Supabase client constructors exist and are not interchangeable:
 - `src/lib/supabase/server.ts` (`createSupabaseServerClient`) — for server components/actions, cookie-based, async.
@@ -183,11 +166,11 @@ Two Supabase client constructors exist and are not interchangeable:
 
 ### Validation
 
-`src/lib/validation.ts` is the single source of truth for profile/registration form shape: Zod schemas (`profileSchema`, `registrationFlagsSchema`, `responsesSchema`) plus the option lists + human-readable label maps (t-shirt sizes, dietary, gender, race, major, level of study, etc.) that both the forms and the admin table rely on. When adding a new profile field, it typically needs to be threaded through: the schema in `validation.ts`, the form component in `src/components/forms/`, the `upsertProfile` field mapping in `src/app/portal/actions.ts`, and the `AdminRow` type + query in `src/app/admin/actions.ts`.
+`src/lib/validation.ts` is the single source of truth for profile/registration form shape: Zod schemas (`profileSchema`, `registrationFlagsSchema`, `responsesSchema`) plus the option lists + human-readable label maps (t-shirt sizes, dietary, gender, race, major, level of study, etc.) that the forms rely on. When adding a new profile field, it typically needs to be threaded through: the schema in `validation.ts`, the form component in `src/components/forms/`, and the `upsertProfile` field mapping in `src/app/portal/actions.ts`.
 
 Form selects start blank when the answer isn't known (only `email` is prefilled, from the auth email): the page components pass `ProfileFormDefaults` (enum fields may be `""`), so a required select fails validation until the applicant picks something. Don't add guessed defaults back.
 
-**Free-response questions are different and much cheaper to change:** edit only the `APPLICATION_QUESTIONS` array (`id`, `label`, `placeholder?`, `required`, `maxLength`). Answers go in `registrations.responses` keyed by `id`. The onboarding form, `responsesSchema`, admin detail page and CSV export all loop over the array, so no schema/action/admin changes are needed. Removing a question hides old answers but keeps them (`saveResponses` merges). Never reuse an old `id` for a different question.
+**Free-response questions are different and much cheaper to change:** edit only the `APPLICATION_QUESTIONS` array (`id`, `label`, `placeholder?`, `required`, `maxLength`). Answers go in `registrations.responses` keyed by `id`. The onboarding form and `responsesSchema` loop over the array, so no schema/action changes are needed. Removing a question hides old answers but keeps them (`saveResponses` merges). Never reuse an old `id` for a different question.
 
 ### Landing page sections
 
@@ -202,13 +185,17 @@ Form selects start blank when the answer isn't known (only `email` is prefilled,
 All in `src/lib/constants.ts`:
 - `REGISTRATIONS_ENABLED` / `LOGIN_ENABLED`: master switches read from `NEXT_PUBLIC_REGISTRATIONS_ENABLED` / `NEXT_PUBLIC_LOGIN_ENABLED` (true only when the value is exactly `"true"`). Toggle them per environment, not in code.
 - `registrationsOpen()` = `REGISTRATIONS_ENABLED && now < APPLICATIONS_CLOSE`. It's a function, not a constant, so the deadline takes effect without a redeploy. The DB enforces the deadline separately via `settings.applications_close`.
-- `APPLICATIONS_CLOSE`, `DECISIONS_BY`, `RSVP_WINDOW_DAYS`, `EVENT_CAPACITY` are **placeholders** to confirm with organizers.
-- `EMAIL_DAILY_CAP` is 100 for the Resend free plan. Raise it if you upgrade.
+- `APPLICATIONS_CLOSE`, `DECISIONS_BY` are **placeholders** to confirm with organizers.
 - Event info (dates, venue, city, `SITE_URL`, Discord/Devpost links) is also here.
 
 ## Roadmap / WIP
 
 Planned modules that do not exist yet. Treat these as intended direction, not implemented features — check the code before assuming any of this is built.
+
+### Application review (owner)
+
+- Being redesigned. The old `/admin` (table, bulk status, 1–5 score + notes, waitlist promotion, RSVP expiry, batched decision emails, CSV/resume export) was removed; it's in git history at `fa3e197` if any of it is worth reusing.
+- DB pieces still in place: statuses + guards, `notes`/`review_score`/`reviewed_by`, `accepted_at`/`rsvp_deadline`, `last_emailed_status`, owner RLS on resumes.
 
 ### Hacker dashboard (extends `/portal`)
 
@@ -226,10 +213,11 @@ Planned modules that do not exist yet. Treat these as intended direction, not im
 
 ### Judging
 
-- Built: `/judge` (assigned projects, rubric scoring) and owner results on `/staff/judging` (see above).
-- **Open question / WIP:** how projects get distributed to judges (manual per judge, auto-distribute N judges per project, by track, number of rounds). Only the `judge_assignments` table exists; build the assignment UI once this is decided.
+- DB is ready (`projects`, `judge_assignments`, `judge_scores` + RLS); `/judge` is a placeholder.
+- To build: project import (Devpost CSV), judge view of assigned projects + rubric scoring, owner results.
+- **Open question / WIP:** how projects get distributed to judges (manual per judge, auto-distribute N judges per project, by track, number of rounds), and the rubric.
 
 ### Staff dashboard
 
-- Built: stats, hacker lookup + main-event check-in, owner role management (see above).
-- Not yet: workshop events + open/close QR self check-in via `events`, a full list of all hackers for staff, run-of-show schedule (internal staff timeline).
+- `/staff` is a placeholder. DB is ready for check-in (`staff_check_in`/`staff_undo_check_in`) and role changes (`set_user_role`).
+- To build (format still being decided): stats, hacker lookup + check-in, owner role management, workshop events + open/close QR self check-in via `events`, a full list of all hackers for staff, run-of-show schedule (internal staff timeline).

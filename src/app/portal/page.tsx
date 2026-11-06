@@ -39,8 +39,9 @@ export default async function PortalPage() {
     .from("registrations")
     .select("status, editing_locked, resume_url, resume_updated_at, submitted_at, rsvp_deadline, accuracy_agreement, terms_and_conditions, code_of_conduct, can_photograph, share_resume_with_companies, mlh_code_of_conduct, mlh_data_sharing, mlh_communications")
     .eq("user_id", user?.id ?? "")
-    .single();
+    .maybeSingle();
 
+  // No registration row = they haven't clicked Apply yet (shown like a draft, minus the checklist)
   const status = (reg?.status ?? "draft") as RegistrationStatus;
   const locked = reg?.editing_locked ?? false;
   const name = profile?.first_name || profile?.full_name || "";
@@ -53,7 +54,7 @@ export default async function PortalPage() {
     { label: "Agreements", done: hasRequiredConsents(reg) },
     { label: "Resume", done: !!reg?.resume_url },
   ];
-  const started = checklist.some(item => item.done);
+  const started = !!reg;
   const msLeft = Date.parse(APPLICATIONS_CLOSE) - Date.now();
   const daysLeft = Math.floor(msLeft / 86_400_000);
   const hoursLeft = Math.floor(msLeft / 3_600_000);
@@ -187,7 +188,7 @@ export default async function PortalPage() {
                     {title}
                   </h2>
                   <p className="font-[family-name:var(--font-body)] text-xs text-gray-600">
-                    Status: {registrationStatusLabels[status]}
+                    Status: {reg ? registrationStatusLabels[status] : "Not started"}
                   </p>
                 </div>
               </div>

@@ -2,6 +2,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getSignedResumeUrl, uploadResume } from "./actions";
 import ResumeUploader from "@/components/resume/ResumeUploader";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 export default async function ResumePage() {
   const supabase = await createSupabaseServerClient();
@@ -11,7 +12,9 @@ export default async function ResumePage() {
     .from("registrations")
     .select("editing_locked, resume_url, resume_updated_at")
     .eq("user_id", user?.id ?? "")
-    .single();
+    .maybeSingle();
+  // The application form handles the first resume upload
+  if (!reg) redirect("/portal");
 
   const locked = reg?.editing_locked ?? false;
   const hasResume = !!reg?.resume_url;

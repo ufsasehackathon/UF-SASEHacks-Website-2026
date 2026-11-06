@@ -166,13 +166,3 @@ export function searchSchools(query: string, limit = 10): School[] {
     .filter(school => school.name.toLowerCase().includes(lowerQuery))
     .slice(0, limit);
 }
-
-// Get school by ID
-export function getSchoolById(id: string): School | undefined {
-  return mlhSchools.find(school => school.id === id);
-}
-
-// Get school by name (exact match)
-export function getSchoolByName(name: string): School | undefined {
-  return mlhSchools.find(school => school.name.toLowerCase() === name.toLowerCase());
-}
