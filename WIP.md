@@ -5,7 +5,13 @@ Architecture notes are in `CLAUDE.md`. This file tracks what's left before launc
 
 ## Status
 
-The code is built and `npm run lint` / `npx tsc --noEmit` pass. **None of it has been run against a real Supabase database yet.** The SQL and the end-to-end flow still need testing.
+The code is built and `npm run lint` / `npx tsc --noEmit` pass. An automated test suite now covers most of the checklist below (see "Testing" in `CLAUDE.md`). Unit tests pass locally. **The DB, action and browser tests have not run yet:** they need Docker, so their first real run is in CI. Expect a few fixes on that first run.
+
+## 0. Get the test suite green
+- [ ] Push this branch and open a PR to `dev` so the `Tests` workflow runs; fix whatever the first `integration` run turns up
+- [ ] GitHub → Settings → Branches: require the `static` and `integration` checks on `main` (and `dev` if wanted)
+- [ ] Optional, for running DB/E2E tests locally: install Docker Desktop or OrbStack, then `npm run db:start`
+- [ ] Confirm the hosted project's Postgres major version and set `[db] major_version` in `supabase/config.toml` to match (CLI default is 17)
 
 ## 1. Set up a test environment
 - [ ] Use a separate Supabase project for testing (recommended), or the real one before launch
@@ -21,34 +27,14 @@ The code is built and `npm run lint` / `npx tsc --noEmit` pass. **None of it has
 - [ ] Vercel: set both to `true` for **Preview** (dev branch) and leave them unset/`false` for **Production**. Redeploy after changing them.
 
 ## 2. Test checklist
-Database guards (snippets at the bottom of `schema.sql`, run as a non-admin JWT). Each of these should fail:
-- [ ] Setting `status` directly
-- [ ] Setting `review_score` directly
-- [ ] Setting `profiles.discord_id` directly
-- [ ] `rsvp(true)` while not accepted
-- [ ] `submit_application()` after `settings.applications_close`
+**Covered by the automated suite** (tick once CI is green): every DB guard (`status`, `review_score`, `discord_id`, `responses` after submit, locked profile, staff as non-admin), RLS for every table and role, resume storage policies, every RPC (`submit_application` deadline/consents/resume, `rsvp` Discord/deadline/statuses, `set_user_role`, check-in), all portal server actions, and in the browser: magic-link login → Dashboard → Apply card, blank-form errors, full application with resume upload, "Continue application" checklist, status cards, RSVP with Discord linked → confirm → drop out, overdue RSVP, locked profile, role-based routing and Dashboard links, flags-off state, signed-out redirects.
+- [ ] All of the above green in CI
 
-End to end, with two or three accounts (decisions are made in SQL until review is redesigned):
-- [ ] New email-login user → header shows "Dashboard" right after login; portal shows the "Apply to SASEHacks" card
-- [ ] Account created before the schema update → portal shows Apply, not "Application received"
-- [ ] Submit without a resume, the required agreements, or the short answer → blocked (nothing saved)
-- [ ] Submit → status `pending`, and the "application received" email arrives (needs Resend set up)
-- [ ] Free-response answers can't be changed after submitting (not shown on `/portal/profile`; a direct `update registrations set responses = ...` as a non-admin JWT fails)
-- [ ] Brand-new user: portal says "Apply" and status "Not started", and no `registrations` row exists until they open the application form; and the row is `draft`
-- [ ] Brand-new user: the application form has only email prefilled, and submitting with age/grad year/level/skill/hackathons blank shows an error under each
-- [ ] Draft whose submit failed partway: card says "Continue application" with the checklist; declined/rejected cards link to the mailing list
-- [ ] Set someone to `accepted` in SQL (with an `rsvp_deadline`) → portal shows the RSVP card
-- [ ] Email user: "I'm coming" is disabled until Discord is connected → Connect Discord → username shows → confirm → `confirmed`
-- [ ] Discord-login user: confirm works straight away, and `discord_username` is set on their profile
-- [ ] Confirmed user: "I can't make it anymore" → `declined`
-- [ ] Accepted user with a past `rsvp_deadline` → confirming is refused
-- [ ] Resume: non-PDF and >10 MB are rejected; the hacker can download their own
-- [ ] Magic-link login works through Resend SMTP
-
-Roles & dashboards (owner/staff/judge dashboards are placeholders for now; set roles with the SQL snippet in `schema.sql`):
-- [ ] Header has one outlined "Dashboard" button: `/staff` (owner/staff, titled by role), `/judge` (judge), `/portal` (hacker)
-- [ ] As a staff JWT in SQL, `update registrations set status = ...` fails
-- [ ] Hacker: `/staff` and `/judge` redirect to `/portal`
+**Still manual** (can't be automated against the local stack):
+- [ ] Real Discord OAuth: Discord-login user can confirm straight away and `discord_username` is set; email user can "Connect Discord" (needs manual identity linking enabled in the hosted project)
+- [ ] Magic-link login works through Resend SMTP, and the "application received" / RSVP emails arrive from Resend
+- [ ] Account created before the schema update → portal shows Apply, not "Application received" (depends on hosted data)
+- [ ] Vercel Preview and Production flag values behave as expected
 
 ## 3. Decisions still needed from organizers
 - [ ] **How application review/acceptance should work** (the old `/admin` was removed to be redone; it's in git history at `fa3e197`). Includes decision emails and how to handle the Resend 100/day limit
@@ -73,6 +59,11 @@ Roles & dashboards (owner/staff/judge dashboards are placeholders for now; set r
 - [ ] Production Supabase: run `schema.sql`, set up providers, SMTP and redirect URLs
 
 ## Known gaps / follow-ups
+Found while writing the tests (not fixed; the tests check what the DB ends up with rather than locking these in):
+- `submit_application()` only checks `resume_url is not null`, and hackers can write `resume_url` directly through the API. Someone could submit without uploading a resume. Fix: guard `resume_url` (only `saveResume`'s path) or check `storage.objects` in the RPC.
+- `saveRegistrationFlags` returns `ok: true` when nothing was saved (locked or missing registration: RLS matches 0 rows silently). Same pattern in `saveResume`'s registration update.
+- `saveResume` uploads before updating the registration, so a hacker whose editing is locked can still overwrite their resume file.
+- `user_role()` / `is_*()` are executable by anyone (including anon), so a caller who knows a user's UUID can learn their role. Low risk; revoke from `anon` if it matters.
 - No "Save draft" button. Applicants fill out the form in one go. Adding one needs a looser validation schema.
 - No application review UI, decision emails or RSVP expiry right now (see the review decision above). Hacker-triggered emails that fail aren't retried.
 - Discord bot to give confirmed hackers a role using `profiles.discord_id`: future work.

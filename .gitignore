@@ -9,6 +9,12 @@
 
 
 /.next/
+/.next-e2e*/
+/playwright-report/
+/test-results/
+/coverage/
+/supabase/.temp/
+/supabase/.branches/
 /out/
 
 /build

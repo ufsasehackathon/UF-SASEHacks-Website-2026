@@ -34,11 +34,34 @@ npm run dev      # start dev server (Turbopack), http://localhost:3000
 npm run build    # production build (Turbopack)
 npm run start    # run a production build
 npm run lint     # eslint (flat config extending next/core-web-vitals, next/typescript)
+
+npm run test:unit   # Vitest unit tests, no database (runs anywhere)
+npm run db:start    # start local Supabase in Docker (npx supabase start); db:stop to stop it
+npm run test:db     # Vitest DB + server action tests against local Supabase
+npm run test:e2e    # Playwright browser tests (starts its own next dev servers on 3100/3101)
+npm test            # unit + DB/action tests
+npm run test:coverage
 ```
 
-There is no test suite configured in this repo.
-
 **Rule: don't run `npm run build` while `npm run dev` is running.** Both write to `.next/`, so a build overwrites the dev server's files and it starts throwing `ENOENT ... _buildManifest.js.tmp...` errors. Check first (`pgrep -fl "next dev"`). If a dev server is up, verify with `npm run lint` and `npx tsc --noEmit` instead, or ask before building. To recover: stop the dev server, `rm -rf .next`, then `npm run dev`.
+
+### Testing
+
+Four layers, all in `tests/`. CI (`.github/workflows/test.yml`) runs them on every PR and on pushes to `dev`/`main`: a `static` job (lint, `tsc`, unit tests) then an `integration` job (local Supabase in Docker, DB/action tests, Playwright). CI needs no secrets.
+
+- `tests/unit/` — pure logic in `src/lib/` (validation, FAQ parser, email templates/sending with mocked `fetch`, `saveResume` with a fake client, `safeNextPath`, flags/deadline, search helpers).
+- `tests/db/` — guards, RLS per table × role, storage policies, every RPC. Each test signs in real users with JWTs (anon key), so RLS and guards apply.
+- `tests/actions/` — server actions called directly, with `@/lib/supabase/server`, `next/cache` and `next/navigation` mocked (`tests/helpers/next.ts`; `actAs(user)` picks the caller). Resend is mocked by routing `api.resend.com` calls to a `vi.fn`.
+- `tests/e2e/` — Playwright against two `next dev` servers: port 3100 with both flags on, 3101 with both off (`flags-off.spec.ts`). They build into `.next-e2e*` (`NEXT_DIST_DIR`, read by `next.config.ts`) so they don't clobber `npm run dev`. Sessions are injected as Supabase auth cookies (`signIn` in `tests/e2e/support.ts`); one test does the real magic link via Mailpit.
+
+How the test database works:
+- Local Supabase is configured by `supabase/config.toml` (tests only: manual identity linking on, email confirmations off, high auth rate limits, site URL `localhost:3100`). There are no `supabase/migrations`; the test setup (`tests/setup/schema.ts`) applies `supabase/schema.sql` itself, so the tests always run the real schema file.
+- Connection details come from `supabase status -o env` (`tests/setup/env.ts`), never from `.env`/`.env.local`, and the setup refuses non-localhost URLs. Tests truncate tables, so they must never point at the hosted project.
+- App data is wiped before each test file (`RESET_SQL`). Tests make users with unique emails via `createUser({ role })` in `tests/helpers/users.ts`.
+- Real Discord OAuth can't run in tests: `linkDiscord(userId)` inserts an `auth.identities` row, which is all `rsvp()` and `sync_discord_profile()` read. Owner decisions (no review UI yet) are made with `accept()`/`setRegistration()` through the service role, like the SQL editor.
+- E2E servers get explicit empty `RESEND_API_KEY`/`GOOGLE_FAQ_DOC_ID` and local Supabase keys. Next only fills env keys that aren't already set, so the real values in `.env` never load.
+
+When you change the schema, an RPC, a guard or an action, add or update the matching tests. Without Docker locally, run `npm run test:unit`, lint and `tsc`, and let CI run the rest.
 
 ### Environment variables (`.env.local`)
 
@@ -57,13 +80,13 @@ The two `NEXT_PUBLIC_*_ENABLED` flags are set per environment: on in local `.env
 
 Without `RESEND_API_KEY`/`EMAIL_FROM`, emails are skipped (logged) and stay queued; nothing else breaks.
 
-The full database schema (tables, functions, triggers, RLS, storage bucket + policies, indexes) is in `supabase/schema.sql`. It is applied by hand in the Supabase SQL editor (no migration tooling) and is written to be safe to re-run. Keep it in sync with any DB change you make in the dashboard. The bottom of the file has commented-out snippets for giving someone a role, assigning judges to projects, and testing the guards.
+The full database schema (tables, functions, triggers, RLS, storage bucket + policies, indexes) is in `supabase/schema.sql`. It is applied by hand in the Supabase SQL editor (no migration tooling) and is written to be safe to re-run. The test suite also applies it to the local test database on every run (see Testing). Keep it in sync with any DB change you make in the dashboard. The bottom of the file has commented-out snippets for giving someone a role, assigning judges to projects, and testing the guards.
 
 ## Architecture
 
 ### Auth & session refresh
 
-Login is Discord-first: `SignInForm` offers "Continue with Discord" (Supabase OAuth) plus a secondary email magic link (for applicants without Discord, and organizers/judges/sponsors). Google/GitHub were removed. Discord is required later, at RSVP: an accepted hacker who signed in by email links Discord from the portal via `supabase.auth.linkIdentity` (requires manual identity linking enabled in Supabase Auth settings). `ensureRows()` calls the `sync_discord_profile()` RPC on every portal visit to copy the linked identity onto `profiles.discord_id`/`discord_username`. `/auth/callback` only redirects to same-site `next` paths.
+Login is Discord-first: `SignInForm` offers "Continue with Discord" (Supabase OAuth) plus a secondary email magic link (for applicants without Discord, and organizers/judges/sponsors). Google/GitHub were removed. Discord is required later, at RSVP: an accepted hacker who signed in by email links Discord from the portal via `supabase.auth.linkIdentity` (requires manual identity linking enabled in Supabase Auth settings). `ensureRows()` calls the `sync_discord_profile()` RPC on every portal visit to copy the linked identity onto `profiles.discord_id`/`discord_username`. `/auth/callback` only redirects to same-site `next` paths (`safeNextPath` in `src/lib/safeNext.ts`).
 
 Supabase dashboard config (not in code): Discord provider enabled, Site URL/redirect URLs, and Resend as custom SMTP so magic-link emails aren't limited by Supabase's built-in mailer (these count against the Resend quota).
 
