@@ -6,6 +6,7 @@ import { EVENT_CAPACITY } from "@/lib/constants";
 import { registrationStatuses, registrationStatusLabels } from "@/lib/validation";
 import { getPublicImageUrl } from "@/lib/images";
 import Image from "next/image";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -55,8 +56,9 @@ export default async function AdminPage({
       <div className="relative z-10 mx-auto max-w-screen-xl px-4 py-8">
         {/* Header */}
         <div className="mb-8">
+          <Link href="/staff" className="font-[family-name:var(--font-body)] text-[#560700] hover:underline">← Staff dashboard</Link>
           <h1 className="font-[family-name:var(--font-heading)] text-5xl md:text-6xl text-[#560700]">
-            Admin Console
+            Applications
           </h1>
         </div>
 

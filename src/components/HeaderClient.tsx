@@ -26,10 +26,12 @@ const InstagramIcon = ({ size = 18 }: { size?: number }) => (
 
 interface HeaderClientProps {
   user: User | null
-  showDashboard: boolean
+  /** null when signed out */
+  dashboardHref: string | null
+  showPortalLink: boolean
 }
 
-export default function HeaderClient({ user, showDashboard }: HeaderClientProps) {
+export default function HeaderClient({ user, dashboardHref, showPortalLink }: HeaderClientProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
 
@@ -84,8 +86,14 @@ export default function HeaderClient({ user, showDashboard }: HeaderClientProps)
             ))}
           </div>
 
-          {showDashboard && (
-            <Link href="/portal" className="hidden sm:inline-flex px-5 py-1.5 rounded-full text-xs font-black bg-[#560700] text-[#FFE4B3] hover:opacity-90 transition-opacity uppercase">
+          {showPortalLink && (
+            <Link href="/portal" className="hidden sm:inline-flex px-5 py-1.5 rounded-full text-xs font-black border border-[#560700] text-[#560700] hover:bg-[#560700] hover:text-[#FFE4B3] transition-all uppercase">
+              Portal
+            </Link>
+          )}
+
+          {dashboardHref && (
+            <Link href={dashboardHref} className="hidden sm:inline-flex px-5 py-1.5 rounded-full text-xs font-black bg-[#560700] text-[#FFE4B3] hover:opacity-90 transition-opacity uppercase">
               Dashboard
             </Link>
           )}
@@ -119,9 +127,14 @@ export default function HeaderClient({ user, showDashboard }: HeaderClientProps)
                 {link.name}
               </Link>
             ))}
-            {showDashboard && (
-              <Link href="/portal" className="text-[#560700] border-b border-[#560700]/5 pb-2" onClick={() => setMobileMenuOpen(false)}>
+            {dashboardHref && (
+              <Link href={dashboardHref} className="text-[#560700] border-b border-[#560700]/5 pb-2" onClick={() => setMobileMenuOpen(false)}>
                 DASHBOARD
+              </Link>
+            )}
+            {showPortalLink && (
+              <Link href="/portal" className="text-[#560700] border-b border-[#560700]/5 pb-2" onClick={() => setMobileMenuOpen(false)}>
+                PORTAL
               </Link>
             )}
             {mounted && !user && LOGIN_ENABLED && (

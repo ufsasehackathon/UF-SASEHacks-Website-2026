@@ -1,10 +1,17 @@
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getCurrentRole } from "@/lib/session";
+import { ROLE_HOME } from "@/lib/roles";
 import HeaderClient from "./HeaderClient";
 
 export default async function Header() {
-    const supabase = await createSupabaseServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const { user, role } = await getCurrentRole();
 
-    // Any signed-in user can reach /portal (that's where they start their application)
-    return <HeaderClient user={user} showDashboard={!!user} />;
+    // "Dashboard" goes to the role's home (/staff, /judge or /portal). Non-hackers also get a
+    // "Portal" link, since they can apply too.
+    return (
+        <HeaderClient
+            user={user}
+            dashboardHref={role ? ROLE_HOME[role] : null}
+            showPortalLink={!!role && role !== "hacker"}
+        />
+    );
 }

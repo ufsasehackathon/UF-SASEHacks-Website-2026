@@ -12,7 +12,7 @@ The code is built and `npm run lint` / `npm run build` pass. **None of it has be
 - [ ] Run `supabase/schema.sql` in the SQL editor
   - Re-running it also drops the old shipping-address columns (`address_line1/2`, `city`, `state`, `zip_code`) from `profiles`
   - It also resets never-submitted `pending` rows (`submitted_at` null, from the old `pending` default) to `draft`
-- [ ] Make yourself admin (snippet at the bottom of `schema.sql`)
+- [ ] Make yourself owner (snippet at the bottom of `schema.sql`). If you were already `admin`, re-running the schema migrates you to `owner`
 - [ ] Supabase Auth → Providers: enable **Discord**. Create an app at discord.com/developers and use the redirect `https://<project>.supabase.co/auth/v1/callback`
 - [ ] Supabase Auth: enable **manual identity linking** (needed for "Connect Discord")
 - [ ] Supabase Auth → URL config: add `http://localhost:3000` and the dev/preview URLs to the redirect allow list
@@ -48,7 +48,20 @@ End to end, with two or three accounts, one of them admin:
 - [ ] With `EMAIL_DAILY_CAP` lowered to 1 for the test: Send sends one, the rest stay queued
 - [ ] Magic-link login works through Resend SMTP
 
+Roles & dashboards (needs 4 accounts: owner, staff, judge, hacker):
+- [ ] Owner: `/staff/roles` → give someone Staff and someone Judge; demoting the last owner is refused
+- [ ] Header "Dashboard" goes to `/staff` (owner/staff), `/judge` (judge), `/portal` (hacker); non-hackers also see "Portal"
+- [ ] Staff: stats load; lookup finds people by name/email/Discord; "Check in" works only for confirmed hackers, and Undo works
+- [ ] Staff: `/admin`, `/staff/roles`, `/staff/judging` redirect away; as a staff JWT in SQL, `update registrations set status = ...` fails
+- [ ] Owner: import a Devpost CSV on `/staff/judging` (re-import updates instead of duplicating; drafts skipped); edit a table number
+- [ ] Assign a project to the judge with the SQL snippet → judge sees it on `/judge`, scores it, "Save & next" works
+- [ ] Judge can't open an unassigned project (`/judge/<id>` 404s)
+- [ ] Owner sees the judge's scores and the project's average on `/staff/judging`
+- [ ] Hacker: `/staff` and `/judge` redirect to `/portal`
+
 ## 3. Decisions still needed from organizers
+- [ ] **How to distribute projects to judges** (manual per judge, N judges per project automatically, by track, rounds?). Judge assignment UI is WIP until this is decided
+- [ ] Judging rubric wording (`JUDGING_CRITERIA` in `src/lib/judging.ts`)
 - [ ] `APPLICATIONS_CLOSE` (and the same value in `public.settings.applications_close`)
 - [ ] `DECISIONS_BY`, `RSVP_WINDOW_DAYS`, `EVENT_CAPACITY` (all placeholders in `src/lib/constants.ts`)
 - [ ] Sending domain: `sasehacks.com` vs `ufsasehacks.com` (`DOMAIN` in constants is used for email links)
@@ -70,4 +83,7 @@ End to end, with two or three accounts, one of them admin:
 - No "Save draft" button. Applicants fill out the form in one go. Adding one needs a looser validation schema.
 - RSVP expiry is a manual admin button, not on a schedule (could become a cron like the keep-alive workflow).
 - Discord bot to give confirmed hackers a role using `profiles.discord_id`: future work.
-- Roadmap items (schedule view, QR self check-in, teams, judging, staff dashboard): see CLAUDE.md.
+- **Judge assignment UI** (WIP, waiting on the distribution decision above). Until then, assign with the SQL snippet in `schema.sql`.
+- Judges/staff who visit `/portal` get a draft registration row like anyone else, so they show up in the "Drafts" count.
+- Staff can read admin notes/review scores (RLS is row-level). Move lookup behind an RPC if that matters.
+- Roadmap items (schedule view, workshop events + QR self check-in, teams, run-of-show, full hacker list for staff): see CLAUDE.md.

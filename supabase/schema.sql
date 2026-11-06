@@ -102,9 +102,23 @@ create table if not exists public.user_roles (
   primary key (user_id, role)
 );
 
+-- Roles: owner (everything), staff (stats, lookup, check-in), judge (scores assigned projects).
+-- No row = hacker. One role per user.
 alter table public.user_roles drop constraint if exists user_roles_role_check;
+update public.user_roles set role = 'owner' where role = 'admin';   -- old name
+delete from public.user_roles where role not in ('owner','staff','judge');
+-- keep only each user's highest role (owner > staff > judge) before enforcing one per user
+delete from public.user_roles a
+using public.user_roles b
+where a.user_id = b.user_id
+  and a.ctid <> b.ctid
+  and (
+    (case a.role when 'owner' then 1 when 'staff' then 2 else 3 end,  a.ctid)
+    > (case b.role when 'owner' then 1 when 'staff' then 2 else 3 end, b.ctid)
+  );
 alter table public.user_roles add constraint user_roles_role_check
-  check (role in ('admin','sponsor'));
+  check (role in ('owner','staff','judge'));
+create unique index if not exists idx_user_roles_one_per_user on public.user_roles (user_id);
 
 -- check-in: everyone has an account; an attendance row = "this person did this event"
 create table if not exists public.events (
@@ -129,6 +143,37 @@ create table if not exists public.attendance (
 
 insert into public.events (event_name) values ('Check-in') on conflict (event_name) do nothing;
 
+-- judging: projects come from the Devpost CSV import (upsert on devpost_url)
+create table if not exists public.projects (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  devpost_url text unique,
+  track text,
+  table_number text,
+  description text,
+  team text,
+  created_at timestamptz not null default now()
+);
+
+-- which judge scores which project (no UI yet: distribution is still being decided)
+create table if not exists public.judge_assignments (
+  judge_id uuid not null references public.profiles(id) on delete cascade,
+  project_id uuid not null references public.projects(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (judge_id, project_id)
+);
+
+-- one score sheet per judge per project; scores is keyed by JUDGING_CRITERIA id (1-5 each)
+create table if not exists public.judge_scores (
+  judge_id uuid not null references public.profiles(id) on delete cascade,
+  project_id uuid not null references public.projects(id) on delete cascade,
+  scores jsonb not null default '{}'::jsonb,
+  comments text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (judge_id, project_id)
+);
+
 -- single-row app settings read by the RPCs below. Keep applications_close in sync with
 -- APPLICATIONS_CLOSE in src/lib/constants.ts (the app uses that one for display).
 create table if not exists public.settings (
@@ -147,7 +192,49 @@ create table if not exists public.mailing_list (
 -- ===========
 -- FUNCTIONS
 -- ===========
--- admin checker
+-- role checkers
+create or replace function public.user_role(p_uid uuid)
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce((select role from public.user_roles where user_id = p_uid limit 1), 'hacker');
+$$;
+
+create or replace function public.is_owner(p_uid uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (select 1 from public.user_roles where user_id = p_uid and role = 'owner');
+$$;
+
+-- owners count as staff
+create or replace function public.is_staff(p_uid uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (select 1 from public.user_roles where user_id = p_uid and role in ('owner','staff'));
+$$;
+
+create or replace function public.is_judge(p_uid uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (select 1 from public.user_roles where user_id = p_uid and role = 'judge');
+$$;
+
+-- Legacy name for is_owner: the guards, RLS policies and admin actions all call it
 create or replace function public.is_admin(p_uid uuid)
 returns boolean
 language sql
@@ -155,10 +242,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select exists (
-    select 1 from public.user_roles ur
-    where ur.user_id = p_uid and ur.role = 'admin'
-  );
+  select public.is_owner(p_uid);
 $$;
 
 -- updated_at trigger
@@ -310,6 +394,87 @@ $$;
 
 revoke all on function public.self_check_in(text) from public;
 grant execute on function public.self_check_in(text) to authenticated;
+
+-- Owners set anyone's role. 'hacker' removes the role. The last owner can't be removed.
+create or replace function public.set_user_role(p_user_id uuid, p_role text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_owner(auth.uid()) then
+    raise exception 'Only owners can change roles' using errcode = '42501';
+  end if;
+  if p_role not in ('owner','staff','judge','hacker') then
+    raise exception 'Unknown role: %', p_role;
+  end if;
+  if not exists (select 1 from public.profiles where id = p_user_id) then
+    raise exception 'User not found';
+  end if;
+  if p_role <> 'owner' and public.is_owner(p_user_id)
+     and (select count(*) from public.user_roles where role = 'owner') <= 1 then
+    raise exception 'Can''t remove the last owner';
+  end if;
+
+  if p_role = 'hacker' then
+    delete from public.user_roles where user_id = p_user_id;
+  else
+    insert into public.user_roles (user_id, role) values (p_user_id, p_role)
+    on conflict (user_id) do update set role = excluded.role;
+  end if;
+end
+$$;
+
+revoke all on function public.set_user_role(uuid, text) from public;
+grant execute on function public.set_user_role(uuid, text) to authenticated;
+
+-- Staff check a confirmed hacker into the main event ('Check-in'). Idempotent.
+create or replace function public.staff_check_in(p_user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_event uuid;
+begin
+  if not public.is_staff(auth.uid()) then
+    raise exception 'Only staff can check people in' using errcode = '42501';
+  end if;
+  if not exists (
+    select 1 from public.registrations where user_id = p_user_id and status = 'confirmed'
+  ) then
+    raise exception 'This hacker is not confirmed';
+  end if;
+
+  select id into v_event from public.events where event_name = 'Check-in';
+  insert into public.attendance (user_id, event_id, checked_in_by)
+  values (p_user_id, v_event, auth.uid())
+  on conflict (user_id, event_id) do nothing;
+end
+$$;
+
+create or replace function public.staff_undo_check_in(p_user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_staff(auth.uid()) then
+    raise exception 'Only staff can undo check-ins' using errcode = '42501';
+  end if;
+  delete from public.attendance
+  where user_id = p_user_id
+    and event_id = (select id from public.events where event_name = 'Check-in');
+end
+$$;
+
+revoke all on function public.staff_check_in(uuid) from public;
+grant execute on function public.staff_check_in(uuid) to authenticated;
+revoke all on function public.staff_undo_check_in(uuid) from public;
+grant execute on function public.staff_undo_check_in(uuid) to authenticated;
 
 -- Submit the caller's application: draft -> pending. Checks the deadline, the required
 -- consents and that a resume is on file. Profile completeness is validated app-side.
@@ -524,6 +689,12 @@ before insert or update on public.profiles
 for each row
 execute function public.guard_profile_locked();
 
+drop trigger if exists trg_judge_scores_touch on public.judge_scores;
+create trigger trg_judge_scores_touch
+before update on public.judge_scores
+for each row
+execute function public.touch_updated_at();
+
 -- ===========
 -- RLS ENABLE
 -- ===========
@@ -535,6 +706,9 @@ alter table public.events enable row level security;
 alter table public.attendance enable row level security;
 alter table public.mailing_list enable row level security;
 alter table public.settings enable row level security;
+alter table public.projects enable row level security;
+alter table public.judge_assignments enable row level security;
+alter table public.judge_scores enable row level security;
 
 -- ================
 -- RLS - PROFILES
@@ -605,6 +779,25 @@ to authenticated
 using ( public.is_admin(auth.uid()) )
 with check ( public.is_admin(auth.uid()) );
 
+-- ==========================
+-- RLS - STAFF (read-only)
+-- ==========================
+-- Staff (and owners) can read hacker info for lookup/check-in. They get no write policies,
+-- and the guard triggers still treat staff as non-admins.
+drop policy if exists "profiles_staff_select" on public.profiles;
+create policy "profiles_staff_select"
+on public.profiles
+for select
+to authenticated
+using ( public.is_staff(auth.uid()) );
+
+drop policy if exists "registrations_staff_select" on public.registrations;
+create policy "registrations_staff_select"
+on public.registrations
+for select
+to authenticated
+using ( public.is_staff(auth.uid()) );
+
 -- =================
 -- RLS - USER_ROLES
 -- =================
@@ -615,13 +808,8 @@ for select
 to authenticated
 using ( user_id = auth.uid() or public.is_admin(auth.uid()) );
 
+-- no write policies: roles change only through set_user_role()
 drop policy if exists "user_roles_admin_all" on public.user_roles;
-create policy "user_roles_admin_all"
-on public.user_roles
-for all
-to authenticated
-using ( public.is_admin(auth.uid()) )
-with check ( public.is_admin(auth.uid()) );
 
 -- ==================
 -- RLS - CHECK-IN
@@ -633,6 +821,20 @@ for all
 to authenticated
 using ( public.is_admin(auth.uid()) )
 with check ( public.is_admin(auth.uid()) );
+
+drop policy if exists "events_staff_select" on public.events;
+create policy "events_staff_select"
+on public.events
+for select
+to authenticated
+using ( public.is_staff(auth.uid()) );
+
+drop policy if exists "attendance_staff_select" on public.attendance;
+create policy "attendance_staff_select"
+on public.attendance
+for select
+to authenticated
+using ( public.is_staff(auth.uid()) );
 
 -- applicants can see their own check-ins
 drop policy if exists "attendance_owner_select" on public.attendance;
@@ -650,6 +852,77 @@ for all
 to authenticated
 using ( public.is_admin(auth.uid()) )
 with check ( public.is_admin(auth.uid()) );
+
+-- ==================
+-- RLS - JUDGING
+-- ==================
+drop policy if exists "projects_owner_all" on public.projects;
+create policy "projects_owner_all"
+on public.projects
+for all
+to authenticated
+using ( public.is_owner(auth.uid()) )
+with check ( public.is_owner(auth.uid()) );
+
+-- judges see only the projects assigned to them
+drop policy if exists "projects_judge_select" on public.projects;
+create policy "projects_judge_select"
+on public.projects
+for select
+to authenticated
+using (
+  public.is_judge(auth.uid())
+  and exists (
+    select 1 from public.judge_assignments ja
+    where ja.judge_id = auth.uid() and ja.project_id = projects.id
+  )
+);
+
+drop policy if exists "judge_assignments_owner_all" on public.judge_assignments;
+create policy "judge_assignments_owner_all"
+on public.judge_assignments
+for all
+to authenticated
+using ( public.is_owner(auth.uid()) )
+with check ( public.is_owner(auth.uid()) );
+
+drop policy if exists "judge_assignments_judge_select" on public.judge_assignments;
+create policy "judge_assignments_judge_select"
+on public.judge_assignments
+for select
+to authenticated
+using ( judge_id = auth.uid() and public.is_judge(auth.uid()) );
+
+drop policy if exists "judge_scores_owner_all" on public.judge_scores;
+create policy "judge_scores_owner_all"
+on public.judge_scores
+for all
+to authenticated
+using ( public.is_owner(auth.uid()) )
+with check ( public.is_owner(auth.uid()) );
+
+-- judges read/write only their own score sheets, and only for assigned projects
+drop policy if exists "judge_scores_judge_all" on public.judge_scores;
+create policy "judge_scores_judge_all"
+on public.judge_scores
+for all
+to authenticated
+using (
+  judge_id = auth.uid()
+  and public.is_judge(auth.uid())
+  and exists (
+    select 1 from public.judge_assignments ja
+    where ja.judge_id = auth.uid() and ja.project_id = judge_scores.project_id
+  )
+)
+with check (
+  judge_id = auth.uid()
+  and public.is_judge(auth.uid())
+  and exists (
+    select 1 from public.judge_assignments ja
+    where ja.judge_id = auth.uid() and ja.project_id = judge_scores.project_id
+  )
+);
 
 -- ======================
 -- RLS - MAILING LIST
@@ -746,6 +1019,8 @@ create index if not exists idx_profiles_email on public.profiles (lower(email));
 create index if not exists idx_registrations_status on public.registrations (status);
 create index if not exists idx_user_roles_user on public.user_roles (user_id);
 create index if not exists idx_attendance_event on public.attendance (event_id);
+create index if not exists idx_judge_assignments_project on public.judge_assignments (project_id);
+create index if not exists idx_judge_scores_project on public.judge_scores (project_id);
 create unique index if not exists idx_mailing_list_email on public.mailing_list (lower(email));
 create unique index if not exists idx_profiles_discord_id on public.profiles (discord_id);
 
@@ -755,13 +1030,25 @@ select pg_notify('pgrst', 'reload schema');
 -- ---------------------------------------------------------------------------
 -- Not executed automatically
 -- ---------------------------------------------------------------------------
--- Make someone admin (UUID from Dashboard > Authentication > Users):
+-- Make the first owner (UUID from Dashboard > Authentication > Users). After that, owners
+-- change roles from /staff/roles:
 --   insert into public.profiles (id, email, full_name)
 --   values ('PASTE_USER_ID', 'PASTE_EMAIL', 'PASTE_NAME') on conflict (id) do nothing;
---   insert into public.user_roles (user_id, role) values ('PASTE_USER_ID', 'admin')
---   on conflict (user_id, role) do nothing;
+--   insert into public.user_roles (user_id, role) values ('PASTE_USER_ID', 'owner')
+--   on conflict (user_id) do update set role = excluded.role;
 --   insert into public.registrations (user_id) values ('PASTE_USER_ID') on conflict (user_id) do nothing;
---   select public.is_admin('PASTE_USER_ID');  -- expect true
+--   select public.user_role('PASTE_USER_ID');  -- expect 'owner'
+--
+-- Assign a project to a judge (no UI yet; distribution is still being decided):
+--   insert into public.judge_assignments (judge_id, project_id)
+--   select 'JUDGE_USER_ID', id from public.projects where title = 'PROJECT_TITLE'
+--   on conflict do nothing;
+--
+-- Test as staff (same JWT setup as below, with a staff user's id):
+--   select count(*) from public.profiles;                       -- works
+--   update public.registrations set status = 'confirmed';       -- raises 42501
+--   select public.set_user_role('SOME_USER_ID', 'staff');       -- raises 42501
+--   select public.staff_check_in('NOT_CONFIRMED_USER_ID');      -- raises 'not confirmed'
 --
 -- Look for tampered rows (existing project):
 --   select status, editing_locked, count(*) from public.registrations group by 1, 2;
