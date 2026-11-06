@@ -50,8 +50,9 @@ End to end, with two or three accounts, one of them admin:
 
 Roles & dashboards (needs 4 accounts: owner, staff, judge, hacker):
 - [ ] Owner: `/staff/roles` → give someone Staff and someone Judge; demoting the last owner is refused
-- [ ] Header "Dashboard" goes to `/staff` (owner/staff), `/judge` (judge), `/portal` (hacker); non-hackers also see "Portal"
+- [ ] Header has one outlined "Dashboard" button: `/staff` (owner/staff), `/judge` (judge), `/portal` (hacker)
 - [ ] Staff: stats load; lookup finds people by name/email/Discord; "Check in" works only for confirmed hackers, and Undo works
+- [ ] Change a hacker to Staff → they no longer appear in the check-in lookup (but still do on `/staff/roles`)
 - [ ] Staff: `/admin`, `/staff/roles`, `/staff/judging` redirect away; as a staff JWT in SQL, `update registrations set status = ...` fails
 - [ ] Owner: import a Devpost CSV on `/staff/judging` (re-import updates instead of duplicating; drafts skipped); edit a table number
 - [ ] Assign a project to the judge with the SQL snippet → judge sees it on `/judge`, scores it, "Save & next" works

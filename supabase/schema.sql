@@ -806,7 +806,7 @@ create policy "user_roles_self_select"
 on public.user_roles
 for select
 to authenticated
-using ( user_id = auth.uid() or public.is_admin(auth.uid()) );
+using ( user_id = auth.uid() or public.is_staff(auth.uid()) );
 
 -- no write policies: roles change only through set_user_role()
 drop policy if exists "user_roles_admin_all" on public.user_roles;

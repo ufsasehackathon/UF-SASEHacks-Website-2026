@@ -86,13 +86,19 @@ export type LookupRow = {
   dietary: string[];
   accessibility: string | null;
   status: RegistrationStatus | null;
-  /** only known to owners (staff can't read other people's roles); null otherwise */
-  role: Role | null;
+  role: Role;
   checked_in: boolean;
 };
 
-export async function lookupHackers(q: string): Promise<{ ok: true; rows: LookupRow[] } | { ok: false; error: string }> {
-  const { supabase, role: callerRole, error: authError } = await requireRole(STAFF);
+/**
+ * Search people by name, email or Discord. By default only hackers are returned (for check-in);
+ * the role manager passes includeAllRoles to find staff/judges/owners too.
+ */
+export async function lookupHackers(
+  q: string,
+  { includeAllRoles = false }: { includeAllRoles?: boolean } = {}
+): Promise<{ ok: true; rows: LookupRow[] } | { ok: false; error: string }> {
+  const { supabase, error: authError } = await requireRole(STAFF);
   if (authError) return { ok: false, error: authError };
 
   const term = cleanSearch(q);
@@ -103,7 +109,7 @@ export async function lookupHackers(q: string): Promise<{ ok: true; rows: Lookup
     .select("id, full_name, first_name, last_name, email, discord_username, school, tshirt, dietary, accessibility, registrations(status)")
     .or(`full_name.ilike.%${term}%,email.ilike.%${term}%,discord_username.ilike.%${term}%`)
     .order("full_name")
-    .limit(20);
+    .limit(40); // headroom: non-hackers are filtered out below
   if (error) return { ok: false, error: error.message };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -118,9 +124,7 @@ export async function lookupHackers(q: string): Promise<{ ok: true; rows: Lookup
       eventId
         ? supabase.from("attendance").select("user_id").eq("event_id", eventId).in("user_id", ids)
         : Promise.resolve({ data: [] as { user_id: string }[] }),
-      callerRole === "owner"
-        ? supabase.from("user_roles").select("user_id, role").in("user_id", ids)
-        : Promise.resolve({ data: [] as { user_id: string; role: string }[] }),
+      supabase.from("user_roles").select("user_id, role").in("user_id", ids),
     ]);
     for (const a of att.data ?? []) checkedIn.add(a.user_id);
     for (const r of rolesRes.data ?? []) roleById.set(r.user_id, r.role as Role);
@@ -138,11 +142,11 @@ export async function lookupHackers(q: string): Promise<{ ok: true; rows: Lookup
       dietary: p.dietary ?? [],
       accessibility: p.accessibility,
       status: (reg?.status ?? null) as RegistrationStatus | null,
-      role: callerRole === "owner" ? roleById.get(p.id) ?? "hacker" : null,
+      role: roleById.get(p.id) ?? "hacker",
       checked_in: checkedIn.has(p.id),
     };
   });
-  return { ok: true, rows };
+  return { ok: true, rows: (includeAllRoles ? rows : rows.filter(r => r.role === "hacker")).slice(0, 20) };
 }
 
 export async function checkInHacker(userId: string) {

@@ -42,7 +42,7 @@ export default function RoleManager({ holders }: { holders: RoleHolder[] }) {
     if (term.length < 2) { setRows([]); return; }
     const t = setTimeout(() => {
       startSearch(async () => {
-        const res = await lookupHackers(term);
+        const res = await lookupHackers(term, { includeAllRoles: true });
         if (res.ok) setRows(res.rows);
       });
     }, 250);
@@ -70,7 +70,7 @@ export default function RoleManager({ holders }: { holders: RoleHolder[] }) {
               </div>
               <RoleSelect
                 userId={r.user_id}
-                role={r.role ?? "hacker"}
+                role={r.role}
                 onChanged={next => { setRows(prev => prev.map(x => x.user_id === r.user_id ? { ...x, role: next } : x)); router.refresh(); }}
               />
             </li>
