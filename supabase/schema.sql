@@ -182,6 +182,16 @@ create table if not exists public.settings (
 );
 insert into public.settings (id) values (true) on conflict (id) do nothing;
 
+-- review decisions staff have made that an owner hasn't sent yet. registrations.status stays
+-- 'pending' until apply_decisions() sends them, and hackers can't read this table, so the
+-- portal can't show a decision before its email goes out. Writes only via the RPCs below.
+create table if not exists public.pending_decisions (
+  user_id uuid primary key references public.registrations(user_id) on delete cascade,
+  decision text not null check (decision in ('accepted','rejected')),
+  decided_by uuid references auth.users(id) on delete set null,
+  decided_at timestamptz not null default now()
+);
+
 -- mailing list signups from the landing page (no account required)
 create table if not exists public.mailing_list (
   id uuid primary key default gen_random_uuid(),
@@ -574,6 +584,111 @@ $$;
 revoke all on function public.rsvp(boolean) from public;
 grant execute on function public.rsvp(boolean) to authenticated;
 
+-- Staff queue a review decision ('accepted' or 'rejected') for pending applicants. Re-deciding
+-- overwrites. Applicants who aren't 'pending' are skipped. Returns how many were queued.
+create or replace function public.set_decisions(p_user_ids uuid[], p_decision text)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_count integer;
+begin
+  if not public.is_staff(auth.uid()) then
+    raise exception 'Only staff can make decisions' using errcode = '42501';
+  end if;
+  if p_decision is null or p_decision not in ('accepted','rejected') then
+    raise exception 'Unknown decision: %', p_decision;
+  end if;
+
+  insert into public.pending_decisions (user_id, decision, decided_by, decided_at)
+  select r.user_id, p_decision, auth.uid(), now()
+  from public.registrations r
+  where r.user_id = any(p_user_ids) and r.status = 'pending'
+  on conflict (user_id) do update
+    set decision = excluded.decision,
+        decided_by = excluded.decided_by,
+        decided_at = excluded.decided_at;
+  get diagnostics v_count = row_count;
+  return v_count;
+end
+$$;
+
+revoke all on function public.set_decisions(uuid[], text) from public;
+grant execute on function public.set_decisions(uuid[], text) to authenticated;
+
+-- Staff undo queued (unsent) decisions. Returns how many were removed.
+create or replace function public.clear_decisions(p_user_ids uuid[])
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_count integer;
+begin
+  if not public.is_staff(auth.uid()) then
+    raise exception 'Only staff can make decisions' using errcode = '42501';
+  end if;
+  delete from public.pending_decisions where user_id = any(p_user_ids);
+  get diagnostics v_count = row_count;
+  return v_count;
+end
+$$;
+
+revoke all on function public.clear_decisions(uuid[]) from public;
+grant execute on function public.clear_decisions(uuid[]) to authenticated;
+
+-- Owners send decisions: the app emails a batch, then calls this with exactly what it emailed,
+-- p_items = [{"user_id": uuid, "decision": "accepted"|"rejected"}]. The decision passed in wins
+-- over the queued one (staff may have changed it while the emails were going out). Only
+-- registrations still 'pending' change; every item's queue row is deleted either way.
+-- Owners are admins, so the guard triggers don't apply. Returns the ids that were applied.
+create or replace function public.apply_decisions(p_items jsonb, p_rsvp_deadline timestamptz)
+returns uuid[]
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_item jsonb;
+  v_user uuid;
+  v_decision text;
+  v_applied uuid[] := '{}';
+begin
+  if not public.is_owner(auth.uid()) then
+    raise exception 'Only owners can send decisions' using errcode = '42501';
+  end if;
+
+  for v_item in select value from jsonb_array_elements(coalesce(p_items, '[]'::jsonb)) loop
+    v_user := (v_item->>'user_id')::uuid;
+    v_decision := v_item->>'decision';
+    if v_decision is null or v_decision not in ('accepted','rejected') then
+      raise exception 'Unknown decision: %', v_decision;
+    end if;
+
+    update public.registrations r
+    set status = v_decision,
+        last_emailed_status = v_decision,
+        reviewed_by = (select d.decided_by from public.pending_decisions d where d.user_id = v_user),
+        accepted_at = case when v_decision = 'accepted' then now() else r.accepted_at end,
+        rsvp_deadline = case when v_decision = 'accepted' then p_rsvp_deadline else r.rsvp_deadline end
+    where r.user_id = v_user and r.status = 'pending';
+    if found then
+      v_applied := array_append(v_applied, v_user);
+    end if;
+
+    delete from public.pending_decisions where user_id = v_user;
+  end loop;
+
+  return v_applied;
+end
+$$;
+
+revoke all on function public.apply_decisions(jsonb, timestamptz) from public;
+grant execute on function public.apply_decisions(jsonb, timestamptz) to authenticated;
+
 -- Copy the caller's linked Discord identity (if any) onto their profile.
 -- Returns the Discord username, or null when no Discord account is linked.
 create or replace function public.sync_discord_profile()
@@ -709,6 +824,7 @@ alter table public.settings enable row level security;
 alter table public.projects enable row level security;
 alter table public.judge_assignments enable row level security;
 alter table public.judge_scores enable row level security;
+alter table public.pending_decisions enable row level security;
 
 -- ================
 -- RLS - PROFILES
@@ -794,6 +910,18 @@ using ( public.is_staff(auth.uid()) );
 drop policy if exists "registrations_staff_select" on public.registrations;
 create policy "registrations_staff_select"
 on public.registrations
+for select
+to authenticated
+using ( public.is_staff(auth.uid()) );
+
+-- ========================
+-- RLS - PENDING_DECISIONS
+-- ========================
+-- staff and owners read the queue; hackers get nothing (so unsent decisions can't leak).
+-- No write policies: writes go through set_decisions, clear_decisions and apply_decisions.
+drop policy if exists "pending_decisions_staff_select" on public.pending_decisions;
+create policy "pending_decisions_staff_select"
+on public.pending_decisions
 for select
 to authenticated
 using ( public.is_staff(auth.uid()) );
@@ -1012,6 +1140,14 @@ for select
 to authenticated
 using ( bucket_id = 'resumes' and public.is_admin(auth.uid()) );
 
+-- staff (and owners) open applicants' resumes while reviewing
+drop policy if exists "resumes_staff_read" on storage.objects;
+create policy "resumes_staff_read"
+on storage.objects
+for select
+to authenticated
+using ( bucket_id = 'resumes' and public.is_staff(auth.uid()) );
+
 -- =========
 -- INDEXES
 -- =========
@@ -1055,6 +1191,9 @@ select pg_notify('pgrst', 'reload schema');
 --   update public.registrations set status = 'confirmed';       -- raises 42501
 --   select public.set_user_role('SOME_USER_ID', 'staff');       -- raises 42501
 --   select public.staff_check_in('NOT_CONFIRMED_USER_ID');      -- raises 'not confirmed'
+--
+-- See queued decisions (made by staff, not yet sent by an owner):
+--   select * from public.pending_decisions;
 --
 -- Look for tampered rows (existing project):
 --   select status, editing_locked, count(*) from public.registrations group by 1, 2;

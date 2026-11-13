@@ -66,6 +66,7 @@ Found while writing the tests (not fixed; the tests check what the DB ends up wi
 - `user_role()` / `is_*()` are executable by anyone (including anon), so a caller who knows a user's UUID can learn their role. Low risk; revoke from `anon` if it matters.
 - No "Save draft" button. Applicants fill out the form in one go. Adding one needs a looser validation schema.
 - No application review UI, decision emails or RSVP expiry right now (see the review decision above). Hacker-triggered emails that fail aren't retried.
+- Decisions DB is in (`feat/staff-judge-dashboards`): `pending_decisions` table, `set_decisions`/`clear_decisions`/`apply_decisions` RPCs, and staff can read resumes (`resumes_staff_read`). Re-run `schema.sql` in each Supabase project to pick them up. The review UI and Send decisions action that use them are later tasks on that branch.
 - Discord bot to give confirmed hackers a role using `profiles.discord_id`: future work.
 - Staff can read admin notes/review scores (RLS is row-level). If a staff hacker lookup gets built, consider putting it behind an RPC.
 - Unused landing sections `PartnersSections.tsx` and `TeamsSection.tsx` are kept but not rendered on `/`; delete them if they're not coming back.

@@ -5,7 +5,7 @@ import { pdfBytes } from "../helpers/fixtures";
 
 // Storage policies on the private `resumes` bucket.
 
-let hacker: TestUser, other: TestUser, staff: TestUser, owner: TestUser;
+let hacker: TestUser, other: TestUser, staff: TestUser, judge: TestUser, owner: TestUser;
 
 const upload = (user: TestUser | null, path: string) =>
   (user?.client ?? anonClient()).storage.from("resumes").upload(path, pdfBytes(), { contentType: "application/pdf", upsert: true });
@@ -13,10 +13,11 @@ const upload = (user: TestUser | null, path: string) =>
 const signedUrl = (user: TestUser, path: string) => user.client.storage.from("resumes").createSignedUrl(path, 60);
 
 beforeAll(async () => {
-  [hacker, other, staff, owner] = await Promise.all([
+  [hacker, other, staff, judge, owner] = await Promise.all([
     createUser(),
     createUser(),
     createUser({ role: "staff" }),
+    createUser({ role: "judge" }),
     createUser({ role: "owner" }),
   ]);
 });
@@ -75,8 +76,17 @@ describe("reads", () => {
     expect(data ?? []).toEqual([]);
   });
 
-  it("staff can't read resumes", async () => {
-    expect((await signedUrl(staff, `${other.id}/resume.pdf`)).error).not.toBeNull();
+  it("staff can read any resume", async () => {
+    // reviewers open applicants' resumes
+    const { data, error } = await staff.client.storage.from("resumes").download(`${other.id}/resume.pdf`);
+    expect(error).toBeNull();
+    expect(new TextDecoder().decode(await data!.arrayBuffer())).toMatch(/^%PDF-/);
+    expect((await signedUrl(staff, `${other.id}/resume.pdf`)).error).toBeNull();
+  });
+
+  it("a judge can't read resumes", async () => {
+    expect((await judge.client.storage.from("resumes").download(`${other.id}/resume.pdf`)).error).not.toBeNull();
+    expect((await signedUrl(judge, `${other.id}/resume.pdf`)).error).not.toBeNull();
   });
 
   it("an owner can read any resume", async () => {

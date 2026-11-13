@@ -119,6 +119,7 @@ Tables (all in `public`, all with RLS enabled):
 - `judge_assignments` — `(judge_id, project_id)` PK. **No UI yet** (how to distribute projects is still being decided); assign with the SQL snippet at the bottom of `schema.sql`. Owners full access, judges read their own.
 - `judge_scores` — `(judge_id, project_id)` PK, `scores jsonb` keyed by criterion id (no app code yet), `comments`, `updated_at`. Judges read/write only their own sheets for assigned projects; owners full access.
 - `mailing_list` — `email` (unique on `lower(email)`), `created_at`. Filled from the hero's `MailingListForm` (`src/components/MailingListForm.tsx`) via `joinMailingList` in `src/app/actions.ts` (no account needed; duplicate signups are treated as success). RLS: anyone (`anon`/`authenticated`) can insert, only admins can read/modify.
+- `pending_decisions` — `user_id` PK → `registrations(user_id)` (cascade), `decision` (`accepted`/`rejected`), `decided_by` → `auth.users` (set null), `decided_at`. Review decisions staff have made that an owner hasn't sent yet: `registrations.status` stays `pending` until `apply_decisions` runs, so the portal can't show a decision before its email goes out. RLS: staff/owners read; hackers and judges see nothing; no write policies (writes only via `set_decisions`/`clear_decisions`/`apply_decisions`).
 
 #### Application lifecycle (`registrations.status`)
 
@@ -126,13 +127,13 @@ Tables (all in `public`, all with RLS enabled):
 |---|---|---|
 | `draft` | clicked Apply, not submitted ("Started, not submitted") | `ensureRows({ withRegistration: true })` on `/portal/onboarding` (insert guard forces it) |
 | `pending` | submitted, awaiting review (always has `submitted_at`; `schema.sql` resets `pending` rows without one, left over from the old `pending` default, to `draft`) | `submit_application()` RPC |
-| `accepted` | offered a spot, must RSVP by `rsvp_deadline` | owner (SQL for now; no review UI yet) |
+| `accepted` | offered a spot, must RSVP by `rsvp_deadline` | owner's Send decisions (`apply_decisions`) |
 | `confirmed` | RSVP'd yes (attending) | `rsvp(true)` RPC (needs a linked Discord identity) or owner |
 | `declined` | RSVP'd no, dropped out, or RSVP expired | `rsvp(false)` / owner |
 | `waitlist` | waitlisted | owner |
-| `rejected` | rejected | owner |
+| `rejected` | rejected | owner's Send decisions (`apply_decisions`) |
 
-`confirmed` means attending, which is what `self_check_in` requires. **There's no application review/decision UI right now** (the old `/admin` was removed to be redesigned): until it's rebuilt, decisions are made by updating `registrations.status` in the SQL editor (set `accepted_at`/`rsvp_deadline` when accepting). Status labels and the ordered list live in `src/lib/validation.ts` (`registrationStatuses`, `registrationStatusLabels`).
+`confirmed` means attending, which is what `self_check_in` requires. Accept/reject decisions are queued in `pending_decisions` (`set_decisions`) and only reach `registrations.status` when an owner sends them (`apply_decisions`). **The review UI that calls these isn't built yet**: until it is, queue/apply them from the SQL editor or update `registrations.status` directly (set `accepted_at`/`rsvp_deadline` when accepting). Status labels and the ordered list live in `src/lib/validation.ts` (`registrationStatuses`, `registrationStatusLabels`).
 
 #### Email (`src/lib/email.ts`)
 
@@ -151,6 +152,9 @@ Functions (RPCs):
 - `rsvp(p_attending)` — `accepted` → `confirmed`/`declined` before `rsvp_deadline`; `confirmed` → `declined` any time. Confirming requires an `auth.identities` row with provider `discord`. Returns the new status.
 - `sync_discord_profile()` — copies the caller's Discord identity onto their profile. Returns the username or null.
 - `mark_own_status_emailed(p_status)` — sets the caller's `last_emailed_status` (only if it matches their current status).
+- `set_decisions(p_user_ids uuid[], p_decision text)` — staff/owner only (`42501` otherwise). `p_decision` must be `accepted`/`rejected` ("Unknown decision" otherwise). Upserts `pending_decisions` (`decided_by = auth.uid()`) for applicants whose status is `pending`; others are skipped. Returns how many were queued.
+- `clear_decisions(p_user_ids uuid[])` — staff/owner only. Deletes those queued decisions; returns the count.
+- `apply_decisions(p_items jsonb, p_rsvp_deadline timestamptz)` — owner only (`42501` "Only owners can send decisions"). `p_items` = `[{"user_id", "decision"}]`, i.e. exactly what was emailed: the decision passed in wins over the queued one. For each registration still `pending`: `status`/`last_emailed_status := decision`, `reviewed_by :=` the queued `decided_by` (null if gone), and for `accepted` also `accepted_at := now()`, `rsvp_deadline := p_rsvp_deadline`. Deletes every item's queue row (applied or skipped). Returns the applied ids.
 - `keep_alive()` — `security definer`, callable by `anon`. Returns `count(*)` of `mailing_list` (never the emails). Called every 3 days by `.github/workflows/supabase-keepalive.yml` so the free-tier project doesn't pause.
 
 DB-enforced guards (triggers). These apply only to non-admin callers with a JWT. The SQL editor and service role (`auth.uid()` null) bypass them:
@@ -164,7 +168,7 @@ DB-enforced guards (triggers). These apply only to non-admin callers with a JWT.
 
 So the app-side checks are not the only line of defense, but don't rely on the DB alone either — keep the server-action checks.
 
-Resumes are required to submit. Upload validation (10 MB, PDF signature check) and storage live in one helper, `saveResume()` in `src/lib/resume.ts`, used by both the onboarding form and `/portal/resume`. They are stored in the private `resumes` Supabase Storage bucket at the fixed path `{user_id}/resume.pdf` (always this exact filename — uploads use `upsert: true` to overwrite). Storage policies only let a user write `.pdf` files under their own `{user_id}/` prefix, and only the owner or an admin can read them. Hackers download their own resume through a short-lived signed URL rather than a public URL. General images (landing page assets) are served locally from `public/images/`, referenced via `getPublicImageUrl()` in `src/lib/images.ts`.
+Resumes are required to submit. Upload validation (10 MB, PDF signature check) and storage live in one helper, `saveResume()` in `src/lib/resume.ts`, used by both the onboarding form and `/portal/resume`. They are stored in the private `resumes` Supabase Storage bucket at the fixed path `{user_id}/resume.pdf` (always this exact filename — uploads use `upsert: true` to overwrite). Storage policies only let a user write `.pdf` files under their own `{user_id}/` prefix, and only the resume's owner, staff or owners can read them (staff open resumes while reviewing; judges can't). Hackers download their own resume through a short-lived signed URL rather than a public URL. General images (landing page assets) are served locally from `public/images/`, referenced via `getPublicImageUrl()` in `src/lib/images.ts`.
 
 `ensureRows()` in `src/app/portal/actions.ts` lazily creates a user's `profiles` row on portal visits. The `registrations` row is only created when they start an application (`ensureRows({ withRegistration: true })`, called by `/portal/onboarding` while applications are open), so portal visits, staff and judges don't count as applicants. No registration row = "Not started". `/portal/profile` and `/portal/resume` redirect to `/portal` until a registration exists.
 
@@ -218,7 +222,7 @@ Planned modules that do not exist yet. Treat these as intended direction, not im
 ### Application review (owner)
 
 - Being redesigned. The old `/admin` (table, bulk status, 1–5 score + notes, waitlist promotion, RSVP expiry, batched decision emails, CSV/resume export) was removed; it's in git history at `fa3e197` if any of it is worth reusing.
-- DB pieces still in place: statuses + guards, `notes`/`review_score`/`reviewed_by`, `accepted_at`/`rsvp_deadline`, `last_emailed_status`, owner RLS on resumes.
+- DB pieces still in place: statuses + guards, `notes`/`review_score`/`reviewed_by`, `accepted_at`/`rsvp_deadline`, `last_emailed_status`, staff/owner read on resumes, and the decision queue (`pending_decisions` + `set_decisions`/`clear_decisions`/`apply_decisions`).
 
 ### Hacker dashboard (extends `/portal`)
 
