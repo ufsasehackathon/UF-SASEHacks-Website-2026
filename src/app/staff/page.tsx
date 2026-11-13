@@ -1,10 +1,6 @@
-import { getCurrentRole } from "@/lib/session";
-import { PageShell } from "@/components/PageShell";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
-/** Placeholder home for owners and staff. Features will be added once the layout is decided. */
-export default async function StaffPage() {
-  const { role } = await getCurrentRole();
-  return <PageShell title={role === "owner" ? "Owner Dashboard" : "Staff Dashboard"} subtitle="Coming soon." />;
+/** /staff opens on the first tab */
+export default function StaffPage() {
+  redirect("/staff/applications");
 }

@@ -51,7 +51,7 @@ Four layers, all in `tests/`. CI (`.github/workflows/test.yml`) runs them on eve
 
 - `tests/unit/` — pure logic in `src/lib/` (validation, FAQ parser, email templates/sending with mocked `fetch`, `saveResume` with a fake client, `safeNextPath`, flags/deadline, search helpers).
 - `tests/db/` — guards, RLS per table × role, storage policies, every RPC. Each test signs in real users with JWTs (anon key), so RLS and guards apply.
-- `tests/actions/` — server actions called directly, with `@/lib/supabase/server`, `next/cache` and `next/navigation` mocked (`tests/helpers/next.ts`; `actAs(user)` picks the caller). Resend is mocked by routing `api.resend.com` calls to a `vi.fn`.
+- `tests/actions/` — server actions called directly, with `@/lib/supabase/server`, `next/cache` and `next/navigation` mocked (`tests/helpers/next.ts`; `actAs(user)` picks the caller). `session.test.ts` covers `requireRole` the same way. Resend is mocked by routing `api.resend.com` calls to a `vi.fn`.
 - `tests/e2e/` — Playwright against two `next dev` servers: port 3100 with both flags on, 3101 with both off (`flags-off.spec.ts`). They build into `.next-e2e*` (`NEXT_DIST_DIR`, read by `next.config.ts`) so they don't clobber `npm run dev`. Sessions are injected as Supabase auth cookies (`signIn` in `tests/e2e/support.ts`); one test does the real magic link via Mailpit.
 
 How the test database works:
@@ -93,16 +93,16 @@ Supabase dashboard config (not in code): Discord provider enabled, Site URL/redi
 `middleware.ts` runs on every request except `_next/static`, `_next/image`, `favicon.ico`, and `api/faq`, and calls `supabase.auth.getUser()` purely to refresh the session cookie. Actual route protection is NOT done in middleware — it's done per-layout:
 
 - `src/app/portal/layout.tsx` — redirects to `/login` if unauthenticated.
-- `src/app/staff/layout.tsx` — owner or staff, else `/portal`.
+- `src/app/staff/layout.tsx` — owner or staff, else `/portal`. `/staff/people` also redirects non-owners to `/staff/applications`.
 - `src/app/judge/layout.tsx` — judge or owner, else `/portal`.
 
-Every server action must re-check the caller's role itself (defense in depth), e.g. with `getCurrentRole()` from `src/lib/session.ts`. Don't assume the layout check is sufficient when adding new actions/routes.
+Every server action must re-check the caller's role itself (defense in depth): staff/owner actions start with `requireRole(STAFF_ROLES)` or `requireRole(OWNER_ROLES)` from `src/lib/session.ts` and return its `error` on `ok: false`. Don't assume the layout check is sufficient when adding new actions/routes.
 
 ### Roles
 
-Four roles: **owner** (`/staff` dashboard; will own application review once it's redesigned), **staff** (`/staff` dashboard), **judge** (`/judge` dashboard), **hacker** (no `user_roles` row; the default, gets `/portal`). One role per user. The owner/staff/judge dashboards are placeholders for now (see below); the DB side (RPCs, RLS, judging tables) is in place for when they're designed.
-- `src/lib/roles.ts` — constants only (`roles`, `ROLE_HOME`: owner/staff → `/staff`, judge → `/judge`, hacker → `/portal`), safe for client components.
-- `src/lib/session.ts` — server-only: `getCurrentRole()` (user + role via the `user_role` RPC).
+Four roles: **owner** (`/staff` dashboard; will own application review once it's redesigned), **staff** (`/staff` dashboard), **judge** (`/judge` dashboard), **hacker** (no `user_roles` row; the default, gets `/portal`). One role per user. `/staff` is a tabbed shell whose tabs are still placeholders, and `/judge` is a placeholder (see below); the DB side (RPCs, RLS, judging tables) is in place for them.
+- `src/lib/roles.ts` — constants only (`roles`, `ROLE_HOME`: owner/staff → `/staff`, judge → `/judge`, hacker → `/portal`; `STAFF_ROLES` = owner + staff, `OWNER_ROLES` = owner), safe for client components.
+- `src/lib/session.ts` — server-only: `getCurrentRole()` (user + role via the `user_role` RPC) and `requireRole(allowed)`, which returns `{ ok: true, supabase, user, role }` or `{ ok: false, error: "Not authenticated" | "Not allowed" }`.
 - The header has a single "Dashboard" link (outlined, like Login/Sign Out) to `ROLE_HOME[role]`.
 - There's no role UI yet: roles are set with the SQL snippet at the bottom of `schema.sql`. The `set_user_role` RPC (owner-only, protects the last owner) exists for a future UI. Someone must sign in once (so they have a `profiles` row) before they can be given a role.
 
@@ -182,9 +182,11 @@ Resumes are required to submit. Upload validation (10 MB, PDF signature check) a
 - `/portal/profile` edits the profile + consents (`ProfileForm`), read-only once `editing_locked`. Free-response answers are **not** editable after submitting: `saveResponses` only works in `draft`, and the DB guard blocks non-admin changes to `responses` once status leaves `draft`.
 - `/portal/onboarding` is the application form. It's only reachable in `draft` (otherwise it redirects to `/portal`). "Submit Application" saves profile → consents → resume (optional if one is already on file) → free-response answers, then calls `submitApplication()`.
 
-### Owner / staff / judge dashboards (placeholders)
+### Owner / staff / judge dashboards
 
-`/staff` (owner + staff; titled "Owner Dashboard" or "Staff Dashboard" by role) and `/judge` (judge + owner) are intentionally empty "Coming soon" pages using `PageShell` (`src/components/PageShell.tsx`) until the layout is decided. Their layouts still enforce the role checks, and the header's "Dashboard" link still routes there. Keep these pages lean: add features only once they're designed.
+`/staff` (owner + staff): `src/app/staff/layout.tsx` renders `PageShell` (`src/components/PageShell.tsx`) titled "Owner Dashboard" or "Staff Dashboard" by role, with `StaffTabs` (`src/components/staff/StaffTabs.tsx`, client; active tab from `usePathname()`) above the page. Tabs: Applications `/staff/applications`, Check-in `/staff/checkin`, Judging `/staff/judging`, and People `/staff/people` (owner only; the page redirects non-owners to `/staff/applications`). `/staff` itself redirects to `/staff/applications`, so the header's "Dashboard" link lands there. The four tab pages are "Coming next." placeholders for now.
+
+`/judge` (judge + owner) is still an empty "Coming soon" page using `PageShell`. Its layout enforces the role check. Keep these pages lean: add features only once they're designed.
 
 ### Server actions pattern
 
@@ -251,5 +253,5 @@ Planned modules that do not exist yet. Treat these as intended direction, not im
 
 ### Staff dashboard
 
-- `/staff` is a placeholder. DB is ready for check-in (`staff_check_in`/`staff_undo_check_in`), the on-site waitlist (`add_to_waitlist`/`admit_from_waitlist`/`remove_from_waitlist`), event capacity (`settings.capacity`) and role changes (`set_user_role`).
+- `/staff` is a tabbed shell (Applications, Check-in, Judging, owner-only People) whose tab pages are placeholders. DB is ready for check-in (`staff_check_in`/`staff_undo_check_in`), the on-site waitlist (`add_to_waitlist`/`admit_from_waitlist`/`remove_from_waitlist`), event capacity (`settings.capacity`) and role changes (`set_user_role`).
 - To build (format still being decided): stats, hacker lookup + check-in, owner role management, workshop events + open/close QR self check-in via `events`, a full list of all hackers for staff, run-of-show schedule (internal staff timeline).

@@ -13,3 +13,7 @@ export const ROLE_HOME: Record<Role, string> = {
 export function toRole(value: unknown): Role {
   return roles.includes(value as Role) ? (value as Role) : "hacker";
 }
+
+/** Roles allowed on /staff, and the owner-only parts of it (pass to requireRole) */
+export const STAFF_ROLES = ["owner", "staff"] as const;
+export const OWNER_ROLES = ["owner"] as const;

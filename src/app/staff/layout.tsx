@@ -1,10 +1,19 @@
 import { redirect } from "next/navigation";
 import { getCurrentRole } from "@/lib/session";
+import { PageShell } from "@/components/PageShell";
+import { StaffTabs } from "@/components/staff/StaffTabs";
 
-/** Owners and staff only */
+/** Owners and staff only. Shell + tabs for every /staff page. */
 export default async function StaffLayout({ children }: { children: React.ReactNode }) {
   const { user, role } = await getCurrentRole();
   if (!user) redirect(`/login?next=${encodeURIComponent("/staff")}`);
   if (role !== "owner" && role !== "staff") redirect("/portal");
-  return <>{children}</>;
+  return (
+    <PageShell title={role === "owner" ? "Owner Dashboard" : "Staff Dashboard"}>
+      <div>
+        <StaffTabs isOwner={role === "owner"} />
+        {children}
+      </div>
+    </PageShell>
+  );
 }

@@ -38,7 +38,7 @@ The code is built and `npm run lint` / `npx tsc --noEmit` pass. An automated tes
 
 ## 3. Decisions still needed from organizers
 - [ ] **How application review/acceptance should work** (the old `/admin` was removed to be redone; it's in git history at `fa3e197`). Includes decision emails and how to handle the Resend 100/day limit
-- [ ] **How to format the owner, staff and judge dashboards.** They're empty "Coming soon" pages until this is decided (an earlier version with stats, check-in lookup, role management, Devpost import and scoring was removed; it's in git history at `fa3e197`)
+- [ ] **How to format the owner, staff and judge dashboards.** `/staff` now has its tab layout (Applications, Check-in, Judging, People); `/judge` is still an empty "Coming soon" page (an earlier version with stats, check-in lookup, role management, Devpost import and scoring was removed; it's in git history at `fa3e197`)
 - [ ] **How to distribute projects to judges** (manual per judge, N judges per project automatically, by track, rounds?)
 - [ ] Judging rubric criteria
 - [ ] `APPLICATIONS_CLOSE` (and the same value in `public.settings.applications_close`)
@@ -68,6 +68,7 @@ Found while writing the tests (not fixed; the tests check what the DB ends up wi
 - No application review UI or RSVP expiry right now, and nothing sends the decision emails yet (accepted/rejected templates exist in `statusEmail`) (see the review decision above). Hacker-triggered emails that fail aren't retried.
 - Decisions DB is in (`feat/staff-judge-dashboards`): `pending_decisions` table, `set_decisions`/`clear_decisions`/`apply_decisions` RPCs, and staff can read resumes (`resumes_staff_read`). Re-run `schema.sql` in each Supabase project to pick them up. The review UI and Send decisions action that use them are later tasks on that branch.
 - Check-in & waitlist DB is in (`feat/staff-judge-dashboards`): `registrations.waitlisted_at`, `settings.capacity`, and `add_to_waitlist`/`admit_from_waitlist`/`remove_from_waitlist` RPCs. Re-run `schema.sql` in each Supabase project. The check-in tab that uses them is a later task on that branch.
+- Staff dashboard shell is in (`feat/staff-judge-dashboards`): `/staff` redirects to `/staff/applications`, with tabs Applications / Check-in / Judging / People (owner only). The tab pages are "Coming next." placeholders; later tasks on that branch fill them in. `requireRole()` in `src/lib/session.ts` is the role check for the staff actions.
 - Judging DB is in (`feat/staff-judge-dashboards`): staff have full access to `projects`/`judge_assignments`, `projects.table_number` is an integer (re-running `schema.sql` converts old text values, keeping only digits; non-numeric values become null), and `set_user_role` drops a user's judge assignments when they stop being a judge. Re-run `schema.sql` in each Supabase project. The Judging tab that uses them is a later task on that branch.
 - `tests/actions/portal.test.ts` › `upsertProfileAndConsents` ("saves both", "reports a missing consent after saving the profile") fails against local Supabase with `duplicate key value violates unique constraint "profiles_email_key"` (fails at `c789265` too, so it predates the dashboards work). Likely the shared `validProfile()` email; needs a look.
 - Discord bot to give confirmed hackers a role using `profiles.discord_id`: future work.
