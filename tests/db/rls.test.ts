@@ -251,9 +251,13 @@ describe("judging tables", () => {
     expect(data).toEqual([{ judge_id: judge.id, project_id: assigned }]);
   });
 
-  it.each(["hacker", "staff"] as const)("%s sees no projects", async role => {
-    const user = role === "hacker" ? hacker : staff;
-    expect((await user.client.from("projects").select("id")).data).toEqual([]);
+  it("a hacker sees no projects", async () => {
+    expect((await hacker.client.from("projects").select("id")).data).toEqual([]);
+  });
+
+  it("staff see every project and assignment", async () => {
+    expect(ids((await staff.client.from("projects").select("id")).data)).toEqual([assigned, unassigned].sort());
+    expect((await staff.client.from("judge_assignments").select("judge_id")).data).toHaveLength(2);
   });
 
   it("a judge can't create projects or assign themselves", async () => {

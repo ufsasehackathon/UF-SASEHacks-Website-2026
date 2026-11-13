@@ -145,19 +145,33 @@ create table if not exists public.attendance (
 
 insert into public.events (event_name) values ('Check-in') on conflict (event_name) do nothing;
 
--- judging: projects (no app code yet; devpost_url is unique so an import can upsert on it)
+-- judging: projects (devpost_url is unique so an import can upsert on it)
 create table if not exists public.projects (
   id uuid primary key default gen_random_uuid(),
   title text not null,
   devpost_url text unique,
   track text,
-  table_number text,
+  table_number integer,
   description text,
   team text,
   created_at timestamptz not null default now()
 );
 
--- which judge scores which project (no UI yet: distribution is still being decided)
+-- table_number used to be text: convert it once, keeping only its digits (no-op when already integer)
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'projects'
+      and column_name = 'table_number' and data_type = 'text'
+  ) then
+    alter table public.projects
+      alter column table_number type integer using nullif(regexp_replace(table_number, '\D', '', 'g'), '')::integer;
+  end if;
+end
+$$;
+
+-- which judge scores which project (staff and owners manage these)
 create table if not exists public.judge_assignments (
   judge_id uuid not null references public.profiles(id) on delete cascade,
   project_id uuid not null references public.projects(id) on delete cascade,
@@ -442,6 +456,11 @@ begin
   else
     insert into public.user_roles (user_id, role) values (p_user_id, p_role)
     on conflict (user_id) do update set role = excluded.role;
+  end if;
+
+  -- someone who is no longer a judge keeps no judging assignments
+  if p_role <> 'judge' then
+    delete from public.judge_assignments where judge_id = p_user_id;
   end if;
 end
 $$;
@@ -1145,6 +1164,14 @@ to authenticated
 using ( public.is_owner(auth.uid()) )
 with check ( public.is_owner(auth.uid()) );
 
+drop policy if exists "projects_staff_all" on public.projects;
+create policy "projects_staff_all"
+on public.projects
+for all
+to authenticated
+using ( public.is_staff(auth.uid()) )
+with check ( public.is_staff(auth.uid()) );
+
 -- judges see only the projects assigned to them
 drop policy if exists "projects_judge_select" on public.projects;
 create policy "projects_judge_select"
@@ -1166,6 +1193,14 @@ for all
 to authenticated
 using ( public.is_owner(auth.uid()) )
 with check ( public.is_owner(auth.uid()) );
+
+drop policy if exists "judge_assignments_staff_all" on public.judge_assignments;
+create policy "judge_assignments_staff_all"
+on public.judge_assignments
+for all
+to authenticated
+using ( public.is_staff(auth.uid()) )
+with check ( public.is_staff(auth.uid()) );
 
 drop policy if exists "judge_assignments_judge_select" on public.judge_assignments;
 create policy "judge_assignments_judge_select"
@@ -1334,7 +1369,7 @@ select pg_notify('pgrst', 'reload schema');
 --   where status = 'draft' and resume_url is null and responses = '{}'::jsonb
 --     and not coalesce(accuracy_agreement, false);
 --
--- Assign a project to a judge (no UI yet; distribution is still being decided):
+-- Assign a project to a judge (the staff dashboard's Judging tab does this now; SQL still works):
 --   insert into public.judge_assignments (judge_id, project_id)
 --   select 'JUDGE_USER_ID', id from public.projects where title = 'PROJECT_TITLE'
 --   on conflict do nothing;
