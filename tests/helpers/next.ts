@@ -30,3 +30,15 @@ export const nextMocks = {
     },
   },
 };
+
+/** Route Resend calls to a mock; everything else (Supabase) goes to the real network */
+export function mockResend(response: () => Response = () => new Response("{}", { status: 200 })) {
+  const realFetch = globalThis.fetch;
+  const resend = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () => response());
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
+    String(input).startsWith("https://api.resend.com") ? resend(String(input), init!) : realFetch(input, init)
+  );
+  vi.stubEnv("RESEND_API_KEY", "re_test");
+  vi.stubEnv("EMAIL_FROM", "SASEHacks <team@sasehacks.com>");
+  return resend;
+}

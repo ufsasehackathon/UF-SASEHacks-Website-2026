@@ -51,7 +51,7 @@ Four layers, all in `tests/`. CI (`.github/workflows/test.yml`) runs them on eve
 
 - `tests/unit/` — pure logic in `src/lib/` (validation, FAQ parser, email templates/sending with mocked `fetch`, `saveResume` with a fake client, `safeNextPath`, flags/deadline, search helpers).
 - `tests/db/` — guards, RLS per table × role, storage policies, every RPC. Each test signs in real users with JWTs (anon key), so RLS and guards apply.
-- `tests/actions/` — server actions called directly, with `@/lib/supabase/server`, `next/cache` and `next/navigation` mocked (`tests/helpers/next.ts`; `actAs(user)` picks the caller). `session.test.ts` covers `requireRole` the same way. Resend is mocked by routing `api.resend.com` calls to a `vi.fn`.
+- `tests/actions/` — server actions called directly, with `@/lib/supabase/server`, `next/cache` and `next/navigation` mocked (`tests/helpers/next.ts`; `actAs(user)` picks the caller). `session.test.ts` covers `requireRole` the same way. Resend is mocked by `mockResend()` (also in `tests/helpers/next.ts`), which routes `api.resend.com` calls to a `vi.fn`.
 - `tests/e2e/` — Playwright against two `next dev` servers: port 3100 with both flags on, 3101 with both off (`flags-off.spec.ts`). They build into `.next-e2e*` (`NEXT_DIST_DIR`, read by `next.config.ts`) so they don't clobber `npm run dev`. Sessions are injected as Supabase auth cookies (`signIn` in `tests/e2e/support.ts`); one test does the real magic link via Mailpit.
 
 How the test database works:
@@ -133,11 +133,11 @@ Tables (all in `public`, all with RLS enabled):
 | `waitlist` | on-site waitlist, set by staff on event day (`add_to_waitlist`) | staff (`add_to_waitlist`) |
 | `rejected` | rejected | owner's Send decisions (`apply_decisions`) |
 
-`confirmed` means attending, which is what `self_check_in` requires. Accept/reject decisions are queued in `pending_decisions` (`set_decisions`) and only reach `registrations.status` when an owner sends them (`apply_decisions`). **The review UI that calls these isn't built yet**: until it is, queue/apply them from the SQL editor or update `registrations.status` directly (set `accepted_at`/`rsvp_deadline` when accepting). Status labels and the ordered list live in `src/lib/validation.ts` (`registrationStatuses`, `registrationStatusLabels`).
+`confirmed` means attending, which is what `self_check_in` requires. Accept/reject decisions are queued in `pending_decisions` (`set_decisions`) and only reach `registrations.status` when an owner sends them (`apply_decisions`). The server actions for this are in `src/app/staff/applications/actions.ts` (see Email below). **The review UI that calls them isn't built yet**: until it is, queue/apply them from the SQL editor or update `registrations.status` directly (set `accepted_at`/`rsvp_deadline` when accepting). Status labels and the ordered list live in `src/lib/validation.ts` (`registrationStatuses`, `registrationStatusLabels`).
 
 #### Email (`src/lib/email.ts`)
 
-Sent through Resend's batch HTTP API with `fetch` (no SDK). `statusEmail(status, { firstName, rsvpDeadline? })` holds the templates. Hacker-triggered (application received, RSVP confirm/decline) are sent immediately by `emailOwnStatus` in `src/app/portal/actions.ts`, then marked via the `mark_own_status_emailed` RPC. A failed send is logged and not retried; `last_emailed_status` stays behind, so a future queue can find it. Decision templates exist for `accepted` (includes the RSVP deadline, an ISO `rsvpDeadline` formatted like the portal's, in ET, when given) and `rejected` (links `/#mailing-list`); waitlist has no email. Nothing sends the decision emails yet (the Send decisions action is a later task).
+Sent through Resend's batch HTTP API with `fetch` (no SDK). `statusEmail(status, { firstName, rsvpDeadline? })` holds the templates. Hacker-triggered (application received, RSVP confirm/decline) are sent immediately by `emailOwnStatus` in `src/app/portal/actions.ts`, then marked via the `mark_own_status_emailed` RPC. A failed send is logged and not retried; `last_emailed_status` stays behind, so a future queue can find it. Decision templates exist for `accepted` (includes the RSVP deadline, an ISO `rsvpDeadline` formatted like the portal's, in ET, when given) and `rejected` (links `/#mailing-list`); waitlist has no email. Decision emails are sent by the owner-only `sendDecisions` action in `src/app/staff/applications/actions.ts`: it loads the whole `pending_decisions` queue, skips (leaves queued, counts as `noEmail`) applicants with no profile email, then per batch of up to 100 emails the batch with an RSVP deadline of `rsvpDeadlineFrom(now)` and, only if Resend accepted it, calls `apply_decisions` with exactly those items and that deadline. A failed batch stays queued and stops later batches. It refuses ("Email is not configured") and changes nothing without `RESEND_API_KEY`/`EMAIL_FROM`. Returns `{ ok, error?, sent, failed, noEmail }`.
 
 Main-event check-in (`staff_check_in`), the on-site waitlist RPCs, `settings.capacity`, workshop events and QR `self_check_in` exist in the DB but are **not used by the app code yet** (see Roadmap).
 
@@ -190,7 +190,7 @@ Resumes are required to submit. Upload validation (10 MB, PDF signature check) a
 
 ### Server actions pattern
 
-Mutations live in colocated `actions.ts` files (`src/app/actions.ts`, `src/app/portal/actions.ts`, `src/app/portal/resume/actions.ts`) marked `"use server"` (these files may only export async functions and types). Each action independently re-fetches the authenticated user via `createSupabaseServerClient()` and re-checks authorization — there is no shared middleware-level guard for mutations. Actions return `{ ok: boolean, error?: string, ... }` rather than throwing, and call `revalidatePath(...)` on the affected route(s) after a successful mutation instead of relying on client-side refresh.
+Mutations live in colocated `actions.ts` files (`src/app/actions.ts`, `src/app/portal/actions.ts`, `src/app/portal/resume/actions.ts`, `src/app/staff/applications/actions.ts`) marked `"use server"` (these files may only export async functions and types). Each action independently re-fetches the authenticated user via `createSupabaseServerClient()` (staff actions do it through `requireRole(STAFF_ROLES)` / `requireRole(OWNER_ROLES)`) and re-checks authorization — there is no shared middleware-level guard for mutations. Actions return `{ ok: boolean, error?: string, ... }` rather than throwing, and call `revalidatePath(...)` on the affected route(s) after a successful mutation instead of relying on client-side refresh.
 
 Two Supabase client constructors exist and are not interchangeable:
 - `src/lib/supabase/server.ts` (`createSupabaseServerClient`) — for server components/actions, cookie-based, async.
@@ -230,6 +230,7 @@ Planned modules that do not exist yet. Treat these as intended direction, not im
 
 - Being redesigned. The old `/admin` (table, bulk status, 1–5 score + notes, waitlist promotion, RSVP expiry, batched decision emails, CSV/resume export) was removed; it's in git history at `fa3e197` if any of it is worth reusing.
 - DB pieces still in place: statuses + guards, `notes`/`review_score`/`reviewed_by`, `accepted_at`/`rsvp_deadline`, `last_emailed_status`, staff/owner read on resumes, and the decision queue (`pending_decisions` + `set_decisions`/`clear_decisions`/`apply_decisions`).
+- Server actions in place (`src/app/staff/applications/actions.ts`): `setDecisions`/`clearDecisions`/`getResumeUrl` (staff/owner) and `sendDecisions` (owner). The Applications tab UI that calls them is still to build.
 
 ### Hacker dashboard (extends `/portal`)
 

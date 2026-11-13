@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RedirectError, actAs, revalidatePath } from "../helpers/next";
+import { RedirectError, actAs, mockResend, revalidatePath } from "../helpers/next";
 import { serviceClient, sql } from "../helpers/db";
 import {
   accept,
@@ -27,18 +27,6 @@ function answersForm(answer: string) {
   const fd = new FormData();
   for (const q of APPLICATION_QUESTIONS) fd.set(q.id, q.id === QUESTION ? answer : "An answer");
   return fd;
-}
-
-/** Route Resend calls to a mock; everything else (Supabase) goes to the real network */
-function mockResend(response: () => Response = () => new Response("{}", { status: 200 })) {
-  const realFetch = globalThis.fetch;
-  const resend = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () => response());
-  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
-    String(input).startsWith("https://api.resend.com") ? resend(String(input), init!) : realFetch(input, init)
-  );
-  vi.stubEnv("RESEND_API_KEY", "re_test");
-  vi.stubEnv("EMAIL_FROM", "SASEHacks <team@sasehacks.com>");
-  return resend;
 }
 
 beforeEach(() => {
@@ -227,7 +215,7 @@ describe("upsertProfileAndConsents", () => {
   });
 
   it("saves both", async () => {
-    const result = await portal.upsertProfileAndConsents(null, withConsents(profileForm({ school: "Both U" })));
+    const result = await portal.upsertProfileAndConsents(null, withConsents(profileForm({ email: user.email, school: "Both U" })));
     expect(result).toEqual({ ok: true });
     expect((await getProfile(user.id))?.school).toBe("Both U");
     expect((await getRegistration(user.id))?.can_photograph).toBe(true);
@@ -240,7 +228,7 @@ describe("upsertProfileAndConsents", () => {
   });
 
   it("reports a missing consent after saving the profile", async () => {
-    const result = await portal.upsertProfileAndConsents(null, withConsents(profileForm({ school: "Half U" }), { code_of_conduct: false }));
+    const result = await portal.upsertProfileAndConsents(null, withConsents(profileForm({ email: user.email, school: "Half U" }), { code_of_conduct: false }));
     expect(result).toEqual({ ok: false, error: "You must agree to the code of conduct" });
     expect((await getProfile(user.id))?.school).toBe("Half U");
   });
