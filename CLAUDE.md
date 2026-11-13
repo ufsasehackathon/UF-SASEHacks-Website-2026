@@ -137,7 +137,7 @@ Tables (all in `public`, all with RLS enabled):
 
 #### Email (`src/lib/email.ts`)
 
-Sent through Resend's batch HTTP API with `fetch` (no SDK). `statusEmail(status, ctx)` holds templates for the hacker-triggered emails only (application received, RSVP confirm/decline). They're sent immediately by `emailOwnStatus` in `src/app/portal/actions.ts`, then marked via the `mark_own_status_emailed` RPC. A failed send is logged and not retried; `last_emailed_status` stays behind, so a future queue can find it. Decision emails (accept/waitlist/reject) don't exist yet; they belong to the review redesign.
+Sent through Resend's batch HTTP API with `fetch` (no SDK). `statusEmail(status, { firstName, rsvpDeadline? })` holds the templates. Hacker-triggered (application received, RSVP confirm/decline) are sent immediately by `emailOwnStatus` in `src/app/portal/actions.ts`, then marked via the `mark_own_status_emailed` RPC. A failed send is logged and not retried; `last_emailed_status` stays behind, so a future queue can find it. Decision templates exist for `accepted` (includes the RSVP deadline, an ISO `rsvpDeadline` formatted like the portal's, in ET, when given) and `rejected` (links `/#mailing-list`); waitlist has no email. Nothing sends the decision emails yet (the Send decisions action is a later task).
 
 Main-event check-in (`staff_check_in`), the on-site waitlist RPCs, `settings.capacity`, workshop events and QR `self_check_in` exist in the DB but are **not used by the app code yet** (see Roadmap).
 
@@ -215,7 +215,9 @@ Form selects start blank when the answer isn't known (only `email` is prefilled,
 All in `src/lib/constants.ts`:
 - `REGISTRATIONS_ENABLED` / `LOGIN_ENABLED`: master switches read from `NEXT_PUBLIC_REGISTRATIONS_ENABLED` / `NEXT_PUBLIC_LOGIN_ENABLED` (true only when the value is exactly `"true"`). Toggle them per environment, not in code.
 - `registrationsOpen()` = `REGISTRATIONS_ENABLED && now < APPLICATIONS_CLOSE`. It's a function, not a constant, so the deadline takes effect without a redeploy. The DB enforces the deadline separately via `settings.applications_close`.
-- `APPLICATIONS_CLOSE`, `DECISIONS_BY` are **placeholders** to confirm with organizers.
+- `APPLICATIONS_CLOSE`, `DECISIONS_BY`, `RSVP_WINDOW_DAYS` (7), `EVENT_START`/`EVENT_END` are **placeholders** to confirm with organizers.
+- `rsvpDeadlineFrom(sentAt)` = `sentAt + RSVP_WINDOW_DAYS` days (the RSVP deadline for a decision sent then).
+- `walkInsOpen(now?)` = `EVENT_START <= now <= EVENT_END` (inclusive; not gated on `REGISTRATIONS_ENABLED`): when walk-ins can join the on-site waitlist.
 - Event info (dates, venue, city, `SITE_URL`, Discord/Devpost links) is also here.
 
 ## Roadmap / WIP

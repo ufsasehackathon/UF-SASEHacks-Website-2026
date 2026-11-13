@@ -66,3 +66,26 @@ describe("registrationsOpen", () => {
     expect(Number.isNaN(Date.parse(c.APPLICATIONS_CLOSE))).toBe(false);
   });
 });
+
+describe("walkInsOpen", () => {
+  it("is false before EVENT_START, true at EVENT_START and inside, false after EVENT_END", async () => {
+    const c = await loadConstants({ NEXT_PUBLIC_REGISTRATIONS_ENABLED: "false" });
+    const start = Date.parse(c.EVENT_START);
+    const end = Date.parse(c.EVENT_END);
+    expect(c.walkInsOpen(start - 1)).toBe(false);
+    expect(c.walkInsOpen(start)).toBe(true);
+    expect(c.walkInsOpen(start + 60 * 60 * 1000)).toBe(true);
+    expect(c.walkInsOpen(end)).toBe(true);
+    expect(c.walkInsOpen(end + 1)).toBe(false);
+  });
+});
+
+describe("rsvpDeadlineFrom", () => {
+  it("adds RSVP_WINDOW_DAYS days", async () => {
+    const c = await loadConstants({});
+    const sentAt = new Date("2027-02-03T12:00:00Z");
+    expect(c.rsvpDeadlineFrom(sentAt).getTime()).toBe(sentAt.getTime() + c.RSVP_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    expect(c.RSVP_WINDOW_DAYS).toBe(7);
+    expect(c.rsvpDeadlineFrom(sentAt).toISOString()).toBe("2027-02-10T12:00:00.000Z");
+  });
+});

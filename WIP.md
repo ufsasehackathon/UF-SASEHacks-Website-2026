@@ -42,10 +42,10 @@ The code is built and `npm run lint` / `npx tsc --noEmit` pass. An automated tes
 - [ ] **How to distribute projects to judges** (manual per judge, N judges per project automatically, by track, rounds?)
 - [ ] Judging rubric criteria
 - [ ] `APPLICATIONS_CLOSE` (and the same value in `public.settings.applications_close`)
-- [ ] `DECISIONS_BY` (placeholder in `src/lib/constants.ts`), RSVP window and event capacity (capacity is set in `public.settings.capacity`; the check-in tab will let owners edit it)
+- [ ] `DECISIONS_BY`, `RSVP_WINDOW_DAYS` (7 days) and `EVENT_START`/`EVENT_END` (walk-in window; placeholders in `src/lib/constants.ts`), and event capacity (capacity is set in `public.settings.capacity`; the check-in tab will let owners edit it)
 - [ ] Sending domain: `sasehacks.com` vs `ufsasehacks.com` (`DOMAIN` in constants is used for email links)
 - [ ] Final wording of the free-response question(s) (`APPLICATION_QUESTIONS` in `src/lib/validation.ts`)
-- [ ] Email copy review (`src/lib/email.ts`)
+- [ ] Email copy review (`src/lib/email.ts`), including the new draft accepted/rejected decision emails
 
 ## 4. Email / Resend setup
 - [ ] Add and verify the sending domain in Resend (SPF, DKIM, DMARC records at the registrar)
@@ -65,7 +65,7 @@ Found while writing the tests (not fixed; the tests check what the DB ends up wi
 - `saveResume` uploads before updating the registration, so a hacker whose editing is locked can still overwrite their resume file.
 - `user_role()` / `is_*()` are executable by anyone (including anon), so a caller who knows a user's UUID can learn their role. Low risk; revoke from `anon` if it matters.
 - No "Save draft" button. Applicants fill out the form in one go. Adding one needs a looser validation schema.
-- No application review UI, decision emails or RSVP expiry right now (see the review decision above). Hacker-triggered emails that fail aren't retried.
+- No application review UI or RSVP expiry right now, and nothing sends the decision emails yet (accepted/rejected templates exist in `statusEmail`) (see the review decision above). Hacker-triggered emails that fail aren't retried.
 - Decisions DB is in (`feat/staff-judge-dashboards`): `pending_decisions` table, `set_decisions`/`clear_decisions`/`apply_decisions` RPCs, and staff can read resumes (`resumes_staff_read`). Re-run `schema.sql` in each Supabase project to pick them up. The review UI and Send decisions action that use them are later tasks on that branch.
 - Check-in & waitlist DB is in (`feat/staff-judge-dashboards`): `registrations.waitlisted_at`, `settings.capacity`, and `add_to_waitlist`/`admit_from_waitlist`/`remove_from_waitlist` RPCs. Re-run `schema.sql` in each Supabase project. The check-in tab that uses them is a later task on that branch.
 - Judging DB is in (`feat/staff-judge-dashboards`): staff have full access to `projects`/`judge_assignments`, `projects.table_number` is an integer (re-running `schema.sql` converts old text values, keeping only digits; non-numeric values become null), and `set_user_role` drops a user's judge assignments when they stop being a judge. Re-run `schema.sql` in each Supabase project. The Judging tab that uses them is a later task on that branch.

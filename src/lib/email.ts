@@ -6,7 +6,8 @@ import { HACK_NAME, DATES, VENUE, CITY, DISCORD_INVITE, SITE_URL, DECISIONS_BY }
 
 export type OutgoingEmail = { to: string; subject: string; html: string };
 
-type StatusEmailContext = { firstName: string | null };
+/** `rsvpDeadline` is an ISO timestamp, used by the "accepted" email. */
+type StatusEmailContext = { firstName: string | null; rsvpDeadline?: string | null };
 
 function emailConfigured() {
   return Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
@@ -25,13 +26,19 @@ function button(href: string, label: string) {
   return `<p><a href="${href}" style="display:inline-block;background:#560700;color:#ffffff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold">${label}</a></p>`;
 }
 
+// Same format as the portal's deadline display.
+function formatDeadline(iso: string) {
+  return new Date(iso).toLocaleString("en-US", { timeZone: "America/New_York", dateStyle: "long", timeStyle: "short" }) + " ET";
+}
+
 function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 }
 
 /**
- * Subject + body for the hacker-triggered status emails (application received, RSVP confirm/decline),
- * or null for any other status. Decision emails (accept/waitlist/reject) aren't built yet.
+ * Subject + body for a status email, or null for statuses without one. Hacker-triggered:
+ * application received (pending), RSVP confirm/decline. Decisions: accepted (with the RSVP
+ * deadline when given) and rejected. Waitlist has no email.
  */
 export function statusEmail(status: string, ctx: StatusEmailContext): { subject: string; html: string } | null {
   const portal = `${SITE_URL}/portal`;
@@ -43,6 +50,24 @@ export function statusEmail(status: string, ctx: StatusEmailContext): { subject:
         html: layout(ctx.firstName, `<p>Thanks for applying to ${HACK_NAME} (${DATES}, ${CITY})! Your application is in and our team will review it.</p>
 <p>Decisions go out by ${DECISIONS_BY}. You can check your status any time in the portal.</p>
 ${button(portal, "Open the portal")}`),
+      };
+    case "accepted": {
+      const deadline = ctx.rsvpDeadline
+        ? ` by <strong>${formatDeadline(ctx.rsvpDeadline)}</strong>, or it will go to someone else`
+        : "";
+      return {
+        subject: `You're in! RSVP for ${HACK_NAME}`,
+        html: layout(ctx.firstName, `<p>Congratulations! You've been accepted to ${HACK_NAME}, ${DATES} at ${VENUE} in ${CITY}.</p>
+<p>Connect your Discord account and confirm your spot in the portal${deadline}.</p>
+${button(portal, "RSVP in the portal")}`),
+      };
+    }
+    case "rejected":
+      return {
+        subject: `Your ${HACK_NAME} application`,
+        html: layout(ctx.firstName, `<p>Thank you for applying to ${HACK_NAME}. Unfortunately, we couldn't offer you a spot this year.</p>
+<p>We'd love to see you apply again. Join our mailing list to hear when applications open.</p>
+${button(`${SITE_URL}/#mailing-list`, "Join the mailing list")}`),
       };
     case "confirmed":
       return {

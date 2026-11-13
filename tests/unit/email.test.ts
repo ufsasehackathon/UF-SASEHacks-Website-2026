@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sendEmailBatch, statusEmail, type OutgoingEmail } from "@/lib/email";
 import { registrationStatuses } from "@/lib/validation";
+import { HACK_NAME, SITE_URL } from "@/lib/constants";
 
 describe("statusEmail", () => {
   it.each(["pending", "confirmed", "declined"])("has a template for %s", status => {
@@ -9,8 +10,8 @@ describe("statusEmail", () => {
     expect(email?.html).toContain("Hi Ada,");
   });
 
-  it.each(registrationStatuses.filter(s => !["pending", "confirmed", "declined"].includes(s)))(
-    "returns null for %s (no hacker-triggered email)",
+  it.each(registrationStatuses.filter(s => !["pending", "confirmed", "declined", "accepted", "rejected"].includes(s)))(
+    "returns null for %s (no template)",
     status => {
       expect(statusEmail(status, { firstName: "Ada" })).toBeNull();
     }
@@ -29,6 +30,47 @@ describe("statusEmail", () => {
     const html = statusEmail("pending", { firstName: `<script>"x"&'y'</script>` })!.html;
     expect(html).not.toContain("<script>");
     expect(html).toContain("Hi &lt;script&gt;&quot;x&quot;&amp;&#39;y&#39;&lt;/script&gt;,");
+  });
+});
+
+describe('statusEmail("accepted")', () => {
+  it("subject mentions the hackathon and the body has the formatted deadline and a /portal link", () => {
+    const email = statusEmail("accepted", { firstName: "Ada", rsvpDeadline: "2027-02-10T23:59:00-05:00" })!;
+    expect(email.subject).toContain(HACK_NAME);
+    expect(email.html).toContain("Hi Ada,");
+    expect(email.html).toContain("February 10, 2027");
+    expect(email.html).toContain("11:59 PM ET");
+    expect(email.html).toContain(`${SITE_URL}/portal`);
+  });
+
+  it("accepted without a deadline still renders", () => {
+    for (const rsvpDeadline of [undefined, null]) {
+      const email = statusEmail("accepted", { firstName: "Ada", rsvpDeadline })!;
+      expect(email.html).toContain(`${SITE_URL}/portal`);
+      expect(email.html).not.toContain("undefined");
+      expect(email.html).not.toContain("null");
+      expect(email.html).not.toContain("Invalid Date");
+    }
+  });
+});
+
+describe('statusEmail("rejected")', () => {
+  it("links the mailing list", () => {
+    const email = statusEmail("rejected", { firstName: "Ada" })!;
+    expect(email.subject).toContain(HACK_NAME);
+    expect(email.html).toContain(`${SITE_URL}/#mailing-list`);
+  });
+
+  it("escapes the first name", () => {
+    const html = statusEmail("rejected", { firstName: `<script>"x"&'y'</script>` })!.html;
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("Hi &lt;script&gt;&quot;x&quot;&amp;&#39;y&#39;&lt;/script&gt;,");
+  });
+});
+
+describe('statusEmail("waitlist")', () => {
+  it("still returns null", () => {
+    expect(statusEmail("waitlist", { firstName: "Ada" })).toBeNull();
   });
 });
 
