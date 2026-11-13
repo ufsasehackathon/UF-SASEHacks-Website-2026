@@ -42,7 +42,7 @@ The code is built and `npm run lint` / `npx tsc --noEmit` pass. An automated tes
 - [ ] **How to distribute projects to judges** (manual per judge, N judges per project automatically, by track, rounds?)
 - [ ] Judging rubric criteria
 - [ ] `APPLICATIONS_CLOSE` (and the same value in `public.settings.applications_close`)
-- [ ] `DECISIONS_BY` (placeholder in `src/lib/constants.ts`), RSVP window and event capacity
+- [ ] `DECISIONS_BY` (placeholder in `src/lib/constants.ts`), RSVP window and event capacity (capacity is set in `public.settings.capacity`; the check-in tab will let owners edit it)
 - [ ] Sending domain: `sasehacks.com` vs `ufsasehacks.com` (`DOMAIN` in constants is used for email links)
 - [ ] Final wording of the free-response question(s) (`APPLICATION_QUESTIONS` in `src/lib/validation.ts`)
 - [ ] Email copy review (`src/lib/email.ts`)
@@ -67,6 +67,7 @@ Found while writing the tests (not fixed; the tests check what the DB ends up wi
 - No "Save draft" button. Applicants fill out the form in one go. Adding one needs a looser validation schema.
 - No application review UI, decision emails or RSVP expiry right now (see the review decision above). Hacker-triggered emails that fail aren't retried.
 - Decisions DB is in (`feat/staff-judge-dashboards`): `pending_decisions` table, `set_decisions`/`clear_decisions`/`apply_decisions` RPCs, and staff can read resumes (`resumes_staff_read`). Re-run `schema.sql` in each Supabase project to pick them up. The review UI and Send decisions action that use them are later tasks on that branch.
+- Check-in & waitlist DB is in (`feat/staff-judge-dashboards`): `registrations.waitlisted_at`, `settings.capacity`, and `add_to_waitlist`/`admit_from_waitlist`/`remove_from_waitlist` RPCs. Re-run `schema.sql` in each Supabase project. The check-in tab that uses them is a later task on that branch.
 - Discord bot to give confirmed hackers a role using `profiles.discord_id`: future work.
 - Staff can read admin notes/review scores (RLS is row-level). If a staff hacker lookup gets built, consider putting it behind an RPC.
 - Unused landing sections `PartnersSections.tsx` and `TeamsSection.tsx` are kept but not rendered on `/`; delete them if they're not coming back.

@@ -7,7 +7,7 @@ import type { TestEnv } from "./env";
 export const RESET_SQL = `
   truncate public.mailing_list, public.attendance, public.judge_scores, public.judge_assignments,
            public.projects, public.user_roles, public.registrations, public.profiles cascade;
-  update public.settings set applications_close = '2027-02-01 23:59:00-05';
+  update public.settings set applications_close = '2027-02-01 23:59:00-05', capacity = null;
   delete from public.events where event_name <> 'Check-in';
   update public.events set self_checkin_open = false;
 `;

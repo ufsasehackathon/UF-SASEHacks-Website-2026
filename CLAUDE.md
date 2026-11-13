@@ -110,11 +110,11 @@ Four roles: **owner** (`/staff` dashboard; will own application review once it's
 
 Tables (all in `public`, all with RLS enabled):
 - `profiles` — keyed by `id` → `auth.users(id)` (cascade). Personal/demographic info: `full_name`, `first_name`, `last_name`, `email` (unique; where status emails go, editable on the form), `phone_number`, `date_of_birth`, `age`, `school`, `major`, `grad_year`, `level_of_study`, `engineering_skill`, `hackathon_experience`, `linkedin_url`, `country`, `tshirt`, `dietary text[]`, `accessibility`, `gender`, `race text[]`, `discord_id` (unique)/`discord_username` (set only by `sync_discord_profile`), `created_at`/`updated_at`.
-- `registrations` — keyed by `user_id` → `profiles(id)` (cascade). `status` (check-constrained, default `draft`, see lifecycle below), `editing_locked`, admin-only `notes`/`review_score` (1–5)/`reviewed_by`, lifecycle timestamps (`submitted_at`, `accepted_at`, `rsvp_deadline`, `rsvp_at`), `last_emailed_status` (email queue marker), `responses jsonb` (free-response answers keyed by question id), consent flags (`accuracy_agreement`, `terms_and_conditions`, `code_of_conduct`, `can_photograph`, `share_resume_with_companies`, `mlh_code_of_conduct`, `mlh_data_sharing`, `mlh_communications`), resume fields (`resume_url`, `resume_updated_at`), timestamps.
-- `settings` — single row (`id = true`). `applications_close`, enforced by `submit_application()`. Keep it in sync with `APPLICATIONS_CLOSE` in `src/lib/constants.ts`. Readable by signed-in users, writable by admins.
+- `registrations` — keyed by `user_id` → `profiles(id)` (cascade). `status` (check-constrained, default `draft`, see lifecycle below), `editing_locked`, admin-only `notes`/`review_score` (1–5)/`reviewed_by`, lifecycle timestamps (`submitted_at`, `accepted_at`, `rsvp_deadline`, `rsvp_at`, `waitlisted_at` = when staff added them to the on-site waitlist, orders the line), `last_emailed_status` (email queue marker), `responses jsonb` (free-response answers keyed by question id), consent flags (`accuracy_agreement`, `terms_and_conditions`, `code_of_conduct`, `can_photograph`, `share_resume_with_companies`, `mlh_code_of_conduct`, `mlh_data_sharing`, `mlh_communications`), resume fields (`resume_url`, `resume_updated_at`), timestamps.
+- `settings` — single row (`id = true`). `applications_close`, enforced by `submit_application()`. Keep it in sync with `APPLICATIONS_CLOSE` in `src/lib/constants.ts`. `capacity integer` (null = not set; check `capacity > 0`), the event capacity for the day-of check-in counter. Readable by signed-in users, writable by admins (owners).
 - `user_roles` — `(user_id, role)` PK plus a unique index on `user_id` (one role per user); `role` is constrained to `'owner'`, `'staff'` or `'judge'` (no row = hacker). Re-running `schema.sql` migrates old `admin` rows to `owner` and deletes `sponsor` rows. Users can read their own row, staff and owners can read all; there are no write policies (writes go through `set_user_role` or the SQL editor).
 - `events` — `event_name` (unique), `self_checkin_open`, `checkin_code` (random, embedded in a QR for self check-in). A `Check-in` event (main event check-in) is seeded. Owners have full access; staff can read.
-- `attendance` — one row per `(user_id, event_id)` (unique) = "this person attended this event"; `checked_in_by` defaults to `auth.uid()`. Users can read their own rows; staff can read all; owners have full access. Staff check-in writes go through `staff_check_in` (not called by the app yet).
+- `attendance` — one row per `(user_id, event_id)` (unique) = "this person attended this event"; `checked_in_by` defaults to `auth.uid()`. Users can read their own rows; staff can read all; owners have full access. Staff check-in writes go through `staff_check_in` and `admit_from_waitlist` (not called by the app yet).
 - `projects` — `title`, `devpost_url` (unique, the import upsert key), `track`, `table_number`, `description`, `team`. No app code yet (a Devpost CSV import was built and removed until the dashboards are designed). Owners have full access; judges can read only projects assigned to them.
 - `judge_assignments` — `(judge_id, project_id)` PK. **No UI yet** (how to distribute projects is still being decided); assign with the SQL snippet at the bottom of `schema.sql`. Owners full access, judges read their own.
 - `judge_scores` — `(judge_id, project_id)` PK, `scores jsonb` keyed by criterion id (no app code yet), `comments`, `updated_at`. Judges read/write only their own sheets for assigned projects; owners full access.
@@ -128,9 +128,9 @@ Tables (all in `public`, all with RLS enabled):
 | `draft` | clicked Apply, not submitted ("Started, not submitted") | `ensureRows({ withRegistration: true })` on `/portal/onboarding` (insert guard forces it) |
 | `pending` | submitted, awaiting review (always has `submitted_at`; `schema.sql` resets `pending` rows without one, left over from the old `pending` default, to `draft`) | `submit_application()` RPC |
 | `accepted` | offered a spot, must RSVP by `rsvp_deadline` | owner's Send decisions (`apply_decisions`) |
-| `confirmed` | RSVP'd yes (attending) | `rsvp(true)` RPC (needs a linked Discord identity) or owner |
-| `declined` | RSVP'd no, dropped out, or RSVP expired | `rsvp(false)` / owner |
-| `waitlist` | waitlisted | owner |
+| `confirmed` | RSVP'd yes (attending) | `rsvp(true)` RPC (needs a linked Discord identity), staff admitting from the waitlist (`admit_from_waitlist`), or owner |
+| `declined` | RSVP'd no, dropped out, RSVP expired, or removed from the on-site waitlist | `rsvp(false)` / `remove_from_waitlist` / owner |
+| `waitlist` | on-site waitlist, set by staff on event day (`add_to_waitlist`) | staff (`add_to_waitlist`) |
 | `rejected` | rejected | owner's Send decisions (`apply_decisions`) |
 
 `confirmed` means attending, which is what `self_check_in` requires. Accept/reject decisions are queued in `pending_decisions` (`set_decisions`) and only reach `registrations.status` when an owner sends them (`apply_decisions`). **The review UI that calls these isn't built yet**: until it is, queue/apply them from the SQL editor or update `registrations.status` directly (set `accepted_at`/`rsvp_deadline` when accepting). Status labels and the ordered list live in `src/lib/validation.ts` (`registrationStatuses`, `registrationStatusLabels`).
@@ -139,7 +139,7 @@ Tables (all in `public`, all with RLS enabled):
 
 Sent through Resend's batch HTTP API with `fetch` (no SDK). `statusEmail(status, ctx)` holds templates for the hacker-triggered emails only (application received, RSVP confirm/decline). They're sent immediately by `emailOwnStatus` in `src/app/portal/actions.ts`, then marked via the `mark_own_status_emailed` RPC. A failed send is logged and not retried; `last_emailed_status` stays behind, so a future queue can find it. Decision emails (accept/waitlist/reject) don't exist yet; they belong to the review redesign.
 
-Main-event check-in (`staff_check_in`), workshop events and QR `self_check_in` exist in the DB but are **not used by the app code yet** (see Roadmap).
+Main-event check-in (`staff_check_in`), the on-site waitlist RPCs, `settings.capacity`, workshop events and QR `self_check_in` exist in the DB but are **not used by the app code yet** (see Roadmap).
 
 Functions (RPCs):
 - `user_role(p_uid)` — returns `'owner'`/`'staff'`/`'judge'`, or `'hacker'` when there's no row.
@@ -147,6 +147,9 @@ Functions (RPCs):
 - `is_admin(p_uid)` — **legacy name for `is_owner`**. Kept because the guards and most RLS policies call it; "admin" in the schema means owner.
 - `set_user_role(p_user_id, p_role)` — owner-only. `'hacker'` deletes the row. Refuses to remove the last owner.
 - `staff_check_in(p_user_id)` / `staff_undo_check_in(p_user_id)` — staff/owner only, on the seeded `Check-in` event. Check-in requires `status = 'confirmed'`; idempotent.
+- `add_to_waitlist(p_user_id)` — staff/owner only (`42501`). On-site waitlist for event day: works for any registration (accepted no-RSVP, draft walk-in, pending, declined, rejected) that has a linked Discord identity and the required consents. Errors, in order (exact text, shown in the UI): "No application or walk-in agreements found", "Link Discord first", "Agreements not accepted", "Already confirmed", "Already on the waitlist". Sets `status = 'waitlist'`, `waitlisted_at = now()` and deletes any `pending_decisions` row.
+- `admit_from_waitlist(p_user_id)` — staff/owner only. "Not on the waitlist" unless `waitlist`. Sets `confirmed` and inserts the `Check-in` attendance row like `staff_check_in` (`checked_in_by` = caller).
+- `remove_from_waitlist(p_user_id)` — staff/owner only. "Not on the waitlist" unless `waitlist`. Sets `declined`, `waitlisted_at = null`.
 - `self_check_in(p_code)` — lets an authenticated user check themselves into an event whose `self_checkin_open` is true and whose `checkin_code` matches. Requires `registrations.status = 'confirmed'`. Idempotent. Returns the event name. Attendees have no direct insert access to `attendance`, so this is the only path for them.
 - `submit_application()` — `draft` → `pending`, sets `submitted_at`. Checks `settings.applications_close`, the required consents and that a resume is on file (resume is required). Profile field validation is app-side.
 - `rsvp(p_attending)` — `accepted` → `confirmed`/`declined` before `rsvp_deadline`; `confirmed` → `declined` any time. Confirming requires an `auth.identities` row with provider `discord`. Returns the new status.
@@ -158,11 +161,11 @@ Functions (RPCs):
 - `keep_alive()` — `security definer`, callable by `anon`. Returns `count(*)` of `mailing_list` (never the emails). Called every 3 days by `.github/workflows/supabase-keepalive.yml` so the free-tier project doesn't pause.
 
 DB-enforced guards (triggers). These apply only to non-admin callers with a JWT. The SQL editor and service role (`auth.uid()` null) bypass them:
-- Non-admins can't change `registrations.status`, `editing_locked`, `notes`, `user_id`, `review_score`, `reviewed_by`, the lifecycle timestamps, or `last_emailed_status` (raises `42501`). They also can't change `responses` once the row is out of `draft`.
+- Non-admins can't change `registrations.status`, `editing_locked`, `notes`, `user_id`, `review_score`, `reviewed_by`, the lifecycle timestamps, `waitlisted_at`, or `last_emailed_status` (raises `42501`). They also can't change `responses` once the row is out of `draft`.
 - Registrations inserted by non-admins are forced to `draft`/unlocked with all admin fields null. This forces values rather than raising, so `ensureRows()` keeps working.
 - Profile updates raise `42501` when the user's registration has `editing_locked = true`. RLS also blocks owner updates to a locked registration.
 - Non-admins can't set `profiles.discord_id`/`discord_username` directly.
-- The hacker-facing RPCs above still run with the caller's JWT, so they set the transaction-local GUC `sasehacks.bypass_guard = 'on'` around their own update (checked by `guard_bypassed()`). Use the same pattern for any new hacker-facing RPC that writes guarded columns.
+- The hacker-facing RPCs above and the staff waitlist RPCs still run with the caller's JWT, so they set the transaction-local GUC `sasehacks.bypass_guard = 'on'` around their own update (checked by `guard_bypassed()`). Use the same pattern for any new hacker- or staff-facing RPC that writes guarded columns.
 - `updated_at` is auto-touched on `profiles`, `registrations` and `judge_scores`.
 - Staff have **read-only** RLS on `profiles`/`registrations` (including admin notes/scores) and are still "non-admin" for every guard above.
 
@@ -246,5 +249,5 @@ Planned modules that do not exist yet. Treat these as intended direction, not im
 
 ### Staff dashboard
 
-- `/staff` is a placeholder. DB is ready for check-in (`staff_check_in`/`staff_undo_check_in`) and role changes (`set_user_role`).
+- `/staff` is a placeholder. DB is ready for check-in (`staff_check_in`/`staff_undo_check_in`), the on-site waitlist (`add_to_waitlist`/`admit_from_waitlist`/`remove_from_waitlist`), event capacity (`settings.capacity`) and role changes (`set_user_role`).
 - To build (format still being decided): stats, hacker lookup + check-in, owner role management, workshop events + open/close QR self check-in via `events`, a full list of all hackers for staff, run-of-show schedule (internal staff timeline).

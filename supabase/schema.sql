@@ -78,6 +78,8 @@ alter table public.registrations add column if not exists reviewed_by uuid refer
 alter table public.registrations add column if not exists last_emailed_status text;
 -- free-response answers keyed by question id (APPLICATION_QUESTIONS in src/lib/validation.ts)
 alter table public.registrations add column if not exists responses jsonb not null default '{}'::jsonb;
+-- on-site waitlist (event day): when staff added them; orders the line. Set by add_to_waitlist.
+alter table public.registrations add column if not exists waitlisted_at timestamptz;
 
 alter table public.registrations alter column status set default 'draft';
 
@@ -181,6 +183,11 @@ create table if not exists public.settings (
   applications_close timestamptz not null default '2027-02-01 23:59:00-05'
 );
 insert into public.settings (id) values (true) on conflict (id) do nothing;
+-- event capacity for the day-of check-in counter (null = not set). Owners set it.
+alter table public.settings add column if not exists capacity integer;
+alter table public.settings drop constraint if exists settings_capacity_check;
+alter table public.settings add constraint settings_capacity_check
+  check (capacity is null or capacity > 0);
 
 -- review decisions staff have made that an owner hasn't sent yet. registrations.status stays
 -- 'pending' until apply_decisions() sends them, and hackers can't read this table, so the
@@ -269,8 +276,9 @@ $$;
 -- Security guards. They only restrict callers that have a JWT (auth.uid() is not null) and are
 -- not admins. The SQL editor, the service role and other server-side connections have
 -- auth.uid() = null and are unaffected.
--- The hacker-facing RPCs (submit_application, rsvp, sync_discord_profile) still run with the
--- caller's JWT, so they set the transaction-local flag sasehacks.bypass_guard to get past them.
+-- The hacker-facing RPCs (submit_application, rsvp, sync_discord_profile) and the staff
+-- waitlist RPCs still run with the caller's JWT, so they set the transaction-local flag
+-- sasehacks.bypass_guard to get past them.
 create or replace function public.guard_bypassed()
 returns boolean
 language sql
@@ -298,7 +306,8 @@ begin
        or new.rsvp_at is distinct from old.rsvp_at
        or new.review_score is distinct from old.review_score
        or new.reviewed_by is distinct from old.reviewed_by
-       or new.last_emailed_status is distinct from old.last_emailed_status then
+       or new.last_emailed_status is distinct from old.last_emailed_status
+       or new.waitlisted_at is distinct from old.waitlisted_at then
       raise exception 'Not allowed to change admin-controlled registration fields'
         using errcode = '42501';
     end if;
@@ -332,6 +341,7 @@ begin
     new.review_score := null;
     new.reviewed_by := null;
     new.last_emailed_status := null;
+    new.waitlisted_at := null;
   end if;
   return new;
 end
@@ -485,6 +495,116 @@ revoke all on function public.staff_check_in(uuid) from public;
 grant execute on function public.staff_check_in(uuid) to authenticated;
 revoke all on function public.staff_undo_check_in(uuid) from public;
 grant execute on function public.staff_undo_check_in(uuid) to authenticated;
+
+-- On-site waitlist (event day). Staff add someone who shows up without a confirmed spot: an
+-- accepted hacker who never RSVP'd, a pending/declined/rejected applicant, or a walk-in with a
+-- draft that has the agreements. Needs a linked Discord account and the required agreements.
+-- Drops any unsent review decision. The error texts are shown as-is in the staff UI.
+create or replace function public.add_to_waitlist(p_user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_reg public.registrations;
+begin
+  if not public.is_staff(auth.uid()) then
+    raise exception 'Only staff can manage the waitlist' using errcode = '42501';
+  end if;
+
+  select * into v_reg from public.registrations where user_id = p_user_id for update;
+  if not found then
+    raise exception 'No application or walk-in agreements found';
+  end if;
+  if not exists (
+    select 1 from auth.identities i where i.user_id = p_user_id and i.provider = 'discord'
+  ) then
+    raise exception 'Link Discord first';
+  end if;
+  if not (coalesce(v_reg.accuracy_agreement, false) and coalesce(v_reg.terms_and_conditions, false)
+          and coalesce(v_reg.code_of_conduct, false) and coalesce(v_reg.mlh_code_of_conduct, false)
+          and coalesce(v_reg.mlh_data_sharing, false)) then
+    raise exception 'Agreements not accepted';
+  end if;
+  if v_reg.status = 'confirmed' then
+    raise exception 'Already confirmed';
+  end if;
+  if v_reg.status = 'waitlist' then
+    raise exception 'Already on the waitlist';
+  end if;
+
+  perform set_config('sasehacks.bypass_guard', 'on', true);
+  update public.registrations
+  set status = 'waitlist', waitlisted_at = now()
+  where user_id = p_user_id;
+  perform set_config('sasehacks.bypass_guard', 'off', true);
+
+  delete from public.pending_decisions where user_id = p_user_id;
+end
+$$;
+
+-- Admit someone from the waitlist: confirms them and checks them in (like staff_check_in).
+create or replace function public.admit_from_waitlist(p_user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_event uuid;
+begin
+  if not public.is_staff(auth.uid()) then
+    raise exception 'Only staff can manage the waitlist' using errcode = '42501';
+  end if;
+  if not exists (
+    select 1 from public.registrations where user_id = p_user_id and status = 'waitlist' for update
+  ) then
+    raise exception 'Not on the waitlist';
+  end if;
+
+  perform set_config('sasehacks.bypass_guard', 'on', true);
+  update public.registrations set status = 'confirmed' where user_id = p_user_id;
+  perform set_config('sasehacks.bypass_guard', 'off', true);
+
+  select id into v_event from public.events where event_name = 'Check-in';
+  insert into public.attendance (user_id, event_id, checked_in_by)
+  values (p_user_id, v_event, auth.uid())
+  on conflict (user_id, event_id) do nothing;
+end
+$$;
+
+-- Take someone off the waitlist without admitting them (they left): declined.
+create or replace function public.remove_from_waitlist(p_user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_staff(auth.uid()) then
+    raise exception 'Only staff can manage the waitlist' using errcode = '42501';
+  end if;
+  if not exists (
+    select 1 from public.registrations where user_id = p_user_id and status = 'waitlist' for update
+  ) then
+    raise exception 'Not on the waitlist';
+  end if;
+
+  perform set_config('sasehacks.bypass_guard', 'on', true);
+  update public.registrations
+  set status = 'declined', waitlisted_at = null
+  where user_id = p_user_id;
+  perform set_config('sasehacks.bypass_guard', 'off', true);
+end
+$$;
+
+revoke all on function public.add_to_waitlist(uuid) from public;
+grant execute on function public.add_to_waitlist(uuid) to authenticated;
+revoke all on function public.admit_from_waitlist(uuid) from public;
+grant execute on function public.admit_from_waitlist(uuid) to authenticated;
+revoke all on function public.remove_from_waitlist(uuid) from public;
+grant execute on function public.remove_from_waitlist(uuid) to authenticated;
 
 -- Submit the caller's application: draft -> pending. Checks the deadline, the required
 -- consents and that a resume is on file. Profile completeness is validated app-side.
