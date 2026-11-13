@@ -496,6 +496,37 @@ grant execute on function public.staff_check_in(uuid) to authenticated;
 revoke all on function public.staff_undo_check_in(uuid) from public;
 grant execute on function public.staff_undo_check_in(uuid) to authenticated;
 
+-- Waitlist eligibility: a linked Discord account and the required agreements. Returns the
+-- error text ('Link Discord first' / 'Agreements not accepted'), or null when eligible.
+-- Only called by the waitlist RPCs below, so nobody else can execute it.
+create or replace function public.waitlist_eligibility_error(p_user_id uuid)
+returns text
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if not exists (
+    select 1 from auth.identities i where i.user_id = p_user_id and i.provider = 'discord'
+  ) then
+    return 'Link Discord first';
+  end if;
+  if not exists (
+    select 1 from public.registrations r
+    where r.user_id = p_user_id
+      and coalesce(r.accuracy_agreement, false) and coalesce(r.terms_and_conditions, false)
+      and coalesce(r.code_of_conduct, false) and coalesce(r.mlh_code_of_conduct, false)
+      and coalesce(r.mlh_data_sharing, false)
+  ) then
+    return 'Agreements not accepted';
+  end if;
+  return null;
+end
+$$;
+
+revoke all on function public.waitlist_eligibility_error(uuid) from public, anon, authenticated;
+
 -- On-site waitlist (event day). Staff add someone who shows up without a confirmed spot: an
 -- accepted hacker who never RSVP'd, a pending/declined/rejected applicant, or a walk-in with a
 -- draft that has the agreements. Needs a linked Discord account and the required agreements.
@@ -508,6 +539,7 @@ set search_path = public
 as $$
 declare
   v_reg public.registrations;
+  v_error text;
 begin
   if not public.is_staff(auth.uid()) then
     raise exception 'Only staff can manage the waitlist' using errcode = '42501';
@@ -517,15 +549,9 @@ begin
   if not found then
     raise exception 'No application or walk-in agreements found';
   end if;
-  if not exists (
-    select 1 from auth.identities i where i.user_id = p_user_id and i.provider = 'discord'
-  ) then
-    raise exception 'Link Discord first';
-  end if;
-  if not (coalesce(v_reg.accuracy_agreement, false) and coalesce(v_reg.terms_and_conditions, false)
-          and coalesce(v_reg.code_of_conduct, false) and coalesce(v_reg.mlh_code_of_conduct, false)
-          and coalesce(v_reg.mlh_data_sharing, false)) then
-    raise exception 'Agreements not accepted';
+  v_error := public.waitlist_eligibility_error(p_user_id);
+  if v_error is not null then
+    raise exception '%', v_error;
   end if;
   if v_reg.status = 'confirmed' then
     raise exception 'Already confirmed';
@@ -545,6 +571,8 @@ end
 $$;
 
 -- Admit someone from the waitlist: confirms them and checks them in (like staff_check_in).
+-- Re-checks eligibility: a waitlist row can lack Discord/agreements (older rows, SQL edits,
+-- or a hacker who changed them after joining).
 create or replace function public.admit_from_waitlist(p_user_id uuid)
 returns void
 language plpgsql
@@ -553,6 +581,7 @@ set search_path = public
 as $$
 declare
   v_event uuid;
+  v_error text;
 begin
   if not public.is_staff(auth.uid()) then
     raise exception 'Only staff can manage the waitlist' using errcode = '42501';
@@ -561,6 +590,10 @@ begin
     select 1 from public.registrations where user_id = p_user_id and status = 'waitlist' for update
   ) then
     raise exception 'Not on the waitlist';
+  end if;
+  v_error := public.waitlist_eligibility_error(p_user_id);
+  if v_error is not null then
+    raise exception '%', v_error;
   end if;
 
   perform set_config('sasehacks.bypass_guard', 'on', true);

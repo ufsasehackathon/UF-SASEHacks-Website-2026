@@ -142,6 +142,28 @@ describe("admit_from_waitlist", () => {
     expect((await getRegistration(hacker.id))?.status).toBe("accepted");
     expect(await checkIns(hacker.id)).toEqual([]);
   });
+
+  it("refuses when a consent was revoked after joining", async () => {
+    await accept(hacker.id);
+    await linkDiscord(hacker.id);
+    expect((await addToWaitlist(staff, hacker.id)).error).toBeNull();
+    await setRegistration(hacker.id, { status: "waitlist", code_of_conduct: false });
+
+    const { error } = await staff.client.rpc("admit_from_waitlist", { p_user_id: hacker.id });
+    expect(error?.message).toMatch(/Agreements not accepted/);
+    expect((await getRegistration(hacker.id))?.status).toBe("waitlist");
+    expect(await checkIns(hacker.id)).toEqual([]);
+  });
+
+  it("refuses without Discord", async () => {
+    // e.g. a legacy waitlist row from the old review flow, or one written in the SQL editor
+    await setRegistration(hacker.id, { status: "waitlist", waitlisted_at: new Date().toISOString() });
+
+    const { error } = await staff.client.rpc("admit_from_waitlist", { p_user_id: hacker.id });
+    expect(error?.message).toMatch(/Link Discord first/);
+    expect((await getRegistration(hacker.id))?.status).toBe("waitlist");
+    expect(await checkIns(hacker.id)).toEqual([]);
+  });
 });
 
 describe("remove_from_waitlist", () => {
@@ -156,6 +178,15 @@ describe("remove_from_waitlist", () => {
     expect(reg?.status).toBe("declined");
     expect(reg?.waitlisted_at).toBeNull();
     expect(await checkIns(hacker.id)).toEqual([]);
+  });
+});
+
+describe("waitlist_eligibility_error", () => {
+  it("isn't callable through the API", async () => {
+    for (const caller of [hacker, staff]) {
+      const { error } = await caller.client.rpc("waitlist_eligibility_error", { p_user_id: hacker.id });
+      expect(error?.code).toBe(DENIED);
+    }
   });
 });
 
