@@ -137,7 +137,7 @@ describe("sendDecisions", () => {
     await queue(a.id, "accepted");
     const resend = mockResend();
     actAs(await createUser({ role: "staff" }));
-    expect(await apps.sendDecisions()).toEqual({ ok: false, error: "Not allowed", sent: 0, failed: 0, noEmail: 0 });
+    expect(await apps.sendDecisions()).toEqual({ ok: false, error: "Not allowed", sent: 0, failed: 0, noEmail: 0, stale: 0 });
     expect(resend).not.toHaveBeenCalled();
     expect((await getRegistration(a.id))?.status).toBe("pending");
     expect(await queued(a.id)).toBe("accepted");
@@ -152,7 +152,7 @@ describe("sendDecisions", () => {
     const resend = mockResend();
     actAs(owner);
 
-    expect(await apps.sendDecisions()).toEqual({ ok: true, sent: 3, failed: 0, noEmail: 0 });
+    expect(await apps.sendDecisions()).toEqual({ ok: true, sent: 3, failed: 0, noEmail: 0, stale: 0 });
 
     expect(resend).toHaveBeenCalledTimes(1);
     const emails = sentEmails(resend);
@@ -181,7 +181,7 @@ describe("sendDecisions", () => {
     const resend = mockResend();
     actAs(owner);
 
-    expect(await apps.sendDecisions()).toEqual({ ok: true, sent: 101, failed: 0, noEmail: 0 });
+    expect(await apps.sendDecisions()).toEqual({ ok: true, sent: 101, failed: 0, noEmail: 0, stale: 0 });
     expect(resend).toHaveBeenCalledTimes(2);
     expect(sentEmails(resend, 0)).toHaveLength(100);
     expect(sentEmails(resend, 1)).toHaveLength(1);
@@ -196,7 +196,7 @@ describe("sendDecisions", () => {
     actAs(owner);
 
     const result = await apps.sendDecisions();
-    expect(result).toMatchObject({ ok: false, sent: 0, failed: 100, noEmail: 0 });
+    expect(result).toMatchObject({ ok: false, sent: 0, failed: 100, noEmail: 0, stale: 0 });
     expect(result.error).toBeTruthy();
     expect(resend).toHaveBeenCalledTimes(1);
     const [{ count }] = await sql(`select count(*)::int as count from public.registrations where user_id = any($1) and status = 'pending'`, [ids]);
@@ -212,11 +212,28 @@ describe("sendDecisions", () => {
     const resend = mockResend();
     actAs(owner);
 
-    expect(await apps.sendDecisions()).toEqual({ ok: true, sent: 1, failed: 0, noEmail: 1 });
+    expect(await apps.sendDecisions()).toEqual({ ok: true, sent: 1, failed: 0, noEmail: 1, stale: 0 });
     expect(sentEmails(resend).map(e => e.to[0])).toEqual([ada.email]);
     expect((await getRegistration(ada.id))?.status).toBe("accepted");
     expect((await getRegistration(bob.id))?.status).toBe("pending");
     expect(await queued(bob.id)).toBe("accepted");
+  });
+
+  it("skips and clears a queued decision whose applicant is no longer pending", async () => {
+    const [ada, bob] = [await pendingApplicant("Ada"), await pendingApplicant("Bob")];
+    await queue(ada.id, "accepted");
+    await queue(bob.id, "accepted");
+    // An owner decided Bob in the SQL editor while his queued decision was waiting
+    await sql(`update public.registrations set status = 'rejected' where user_id = $1`, [bob.id]);
+    const resend = mockResend();
+    actAs(owner);
+
+    expect(await apps.sendDecisions()).toEqual({ ok: true, sent: 1, failed: 0, noEmail: 0, stale: 1 });
+    expect(resend).toHaveBeenCalledTimes(1);
+    expect(sentEmails(resend).map(e => e.to[0])).toEqual([ada.email]);
+    expect((await getRegistration(bob.id))?.status).toBe("rejected");
+    expect(await queued(bob.id)).toBeUndefined();
+    expect((await getRegistration(ada.id))?.status).toBe("accepted");
   });
 
   it("without Resend configured, nothing changes", async () => {
@@ -226,7 +243,7 @@ describe("sendDecisions", () => {
     vi.stubEnv("RESEND_API_KEY", "");
     actAs(owner);
 
-    expect(await apps.sendDecisions()).toEqual({ ok: false, error: "Email is not configured", sent: 0, failed: 0, noEmail: 0 });
+    expect(await apps.sendDecisions()).toEqual({ ok: false, error: "Email is not configured", sent: 0, failed: 0, noEmail: 0, stale: 0 });
     expect(resend).not.toHaveBeenCalled();
     expect((await getRegistration(a.id))?.status).toBe("pending");
     expect(await queued(a.id)).toBe("accepted");
@@ -235,7 +252,7 @@ describe("sendDecisions", () => {
   it("nothing queued → ok with zeros, no Resend call", async () => {
     const resend = mockResend();
     actAs(owner);
-    expect(await apps.sendDecisions()).toEqual({ ok: true, sent: 0, failed: 0, noEmail: 0 });
+    expect(await apps.sendDecisions()).toEqual({ ok: true, sent: 0, failed: 0, noEmail: 0, stale: 0 });
     expect(resend).not.toHaveBeenCalled();
   });
 });

@@ -47,7 +47,7 @@ export async function getResumeUrl(userId: string): Promise<{ ok: boolean; error
   return { ok: true, url: data.signedUrl };
 }
 
-type SendResult = { ok: boolean; error?: string; sent: number; failed: number; noEmail: number };
+type SendResult = { ok: boolean; error?: string; sent: number; failed: number; noEmail: number; stale: number };
 
 const BATCH = 100;
 
@@ -61,10 +61,12 @@ function chunks<T>(items: T[], size: number): T[][] {
  * Owner only: email every queued decision, then apply it. Each batch of up to 100 is emailed
  * first and only applied (apply_decisions) if Resend accepted it, so nobody's status changes
  * without the email going out. A failed batch stays queued and stops the run. Applicants with
- * no email on their profile are skipped and stay queued.
+ * no email on their profile are skipped and stay queued. Queued decisions for applicants who
+ * are no longer 'pending' (decided some other way meanwhile) aren't emailed: they're cleared
+ * from the queue and counted as `stale`.
  */
 export async function sendDecisions(): Promise<SendResult> {
-  const result: SendResult = { ok: true, sent: 0, failed: 0, noEmail: 0 };
+  const result: SendResult = { ok: true, sent: 0, failed: 0, noEmail: 0, stale: 0 };
 
   const auth = await requireRole(OWNER_ROLES);
   if (!auth.ok) return { ...result, ok: false, error: auth.error };
@@ -81,16 +83,30 @@ export async function sendDecisions(): Promise<SendResult> {
   const rows = (queue ?? []) as { user_id: string; decision: Decision }[];
   if (!rows.length) return result;
 
-  // Profiles by id, looked up in chunks to keep the request URL short
+  // Profiles and current statuses by id, looked up in chunks to keep the request URL short
   const profiles = new Map<string, { email: string | null; first_name: string | null }>();
+  const statuses = new Map<string, string>();
   for (const ids of chunks(rows.map(r => r.user_id), BATCH)) {
     const { data, error } = await supabase.from("profiles").select("id, email, first_name").in("id", ids);
     if (error) return { ...result, ok: false, error: error.message };
     for (const p of data ?? []) profiles.set(p.id, { email: p.email, first_name: p.first_name });
+
+    const { data: regs, error: regError } = await supabase.from("registrations").select("user_id, status").in("user_id", ids);
+    if (regError) return { ...result, ok: false, error: regError.message };
+    for (const r of regs ?? []) statuses.set(r.user_id, r.status);
   }
 
-  const sendable = rows.filter(r => profiles.get(r.user_id)?.email?.trim());
-  result.noEmail = rows.length - sendable.length;
+  // apply_decisions would skip these after the email went out, so don't email them at all
+  const stale = rows.filter(r => statuses.get(r.user_id) !== "pending").map(r => r.user_id);
+  if (stale.length) {
+    const { error } = await supabase.rpc("clear_decisions", { p_user_ids: stale });
+    if (error) return { ...result, ok: false, error: error.message };
+    result.stale = stale.length;
+  }
+
+  const pending = rows.filter(r => statuses.get(r.user_id) === "pending");
+  const sendable = pending.filter(r => profiles.get(r.user_id)?.email?.trim());
+  result.noEmail = pending.length - sendable.length;
 
   for (const chunk of chunks(sendable, BATCH)) {
     const deadline = rsvpDeadlineFrom(new Date());
@@ -117,7 +133,15 @@ export async function sendDecisions(): Promise<SendResult> {
       result.error = `Emails were sent but the decisions weren't saved: ${error.message}`;
       break;
     }
-    result.sent += ((applied ?? []) as string[]).length;
+    const appliedIds = new Set((applied ?? []) as string[]);
+    result.sent += appliedIds.size;
+    const missing = chunk.filter(r => !appliedIds.has(r.user_id)).map(r => r.user_id);
+    if (missing.length) {
+      // Their status changed between loading the queue and applying, after the email went out
+      console.error("Decisions emailed but not applied (no longer pending):", missing);
+      result.failed += missing.length;
+      result.error = `${missing.length} emailed decision(s) weren't applied because the applicant was no longer pending`;
+    }
   }
 
   result.ok = result.failed === 0;
