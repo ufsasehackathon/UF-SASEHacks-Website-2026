@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Registration and information website for UF SASE Hacks, a hackathon. Next.js 15 (App Router) + TypeScript, Supabase (Postgres/Auth/Storage), Tailwind CSS 4, Google Docs (FAQ content, via public export), Resend (transactional email).
 
-The application/acceptance design is in `docs/superpowers/specs/2026-10-29-applications-acceptance-design.md`.
+The application/acceptance design is in `docs/superpowers/specs/2026-10-29-applications-acceptance-design.md`; the staff/owner/judge dashboards design is in `docs/superpowers/specs/2026-11-12-staff-judge-dashboards-design.md`.
 
 ## Rule: keep WIP.md current
 
@@ -49,7 +49,7 @@ npm run test:coverage
 
 Four layers, all in `tests/`. CI (`.github/workflows/test.yml`) runs them on every PR and on pushes to `dev`/`main`: a `static` job (lint, `tsc`, unit tests) then an `integration` job (local Supabase in Docker, DB/action tests, Playwright). CI needs no secrets.
 
-- `tests/unit/` — pure logic in `src/lib/` (validation, FAQ parser, email templates/sending with mocked `fetch`, `saveResume` with a fake client, `safeNextPath`, flags/deadline, search helpers, check-in state/search filter/ET time formatters, Devpost CSV parser, judge assignment planner).
+- `tests/unit/` — pure logic in `src/lib/` (validation, FAQ parser, email templates/sending with mocked `fetch`, `saveResume` with a fake client, `safeNextPath`, flags/deadline, search helpers, applicant state/filters, check-in state/search filter/ET time formatters, Devpost CSV parser, judge assignment planner).
 - `tests/db/` — guards, RLS per table × role, storage policies, every RPC. Each test signs in real users with JWTs (anon key), so RLS and guards apply.
 - `tests/actions/` — server actions called directly, with `@/lib/supabase/server`, `next/cache` and `next/navigation` mocked (`tests/helpers/next.ts`; `actAs(user)` picks the caller). `session.test.ts` covers `requireRole` the same way. Resend is mocked by `mockResend()` (also in `tests/helpers/next.ts`), which routes `api.resend.com` calls to a `vi.fn`.
 - `tests/e2e/` — Playwright against two `next dev` servers: port 3100 with both flags on, 3101 with both off (`flags-off.spec.ts`). They build into `.next-e2e*` (`NEXT_DIST_DIR`, read by `next.config.ts`) so they don't clobber `npm run dev`. Sessions are injected as Supabase auth cookies (`signIn` in `tests/e2e/support.ts`); one test does the real magic link via Mailpit. Files they upload live in `tests/fixtures/`. "Assign judges" spreads work over every judge in the database, so specs that create judges remove their judge roles in `afterEach` (`judging.spec.ts` waits until only its own judges exist).
@@ -78,15 +78,15 @@ NEXT_PUBLIC_REGISTRATIONS_ENABLED=  # "true" opens applications (until APPLICATI
 
 The two `NEXT_PUBLIC_*_ENABLED` flags are set per environment: on in local `.env` and Vercel Preview (`dev`), off in Production until launch. They're inlined at build time, so redeploy after changing them in Vercel.
 
-Without `RESEND_API_KEY`/`EMAIL_FROM`, emails are skipped (logged) and stay queued; nothing else breaks.
+Without `RESEND_API_KEY`/`EMAIL_FROM`, hacker-triggered emails are skipped (logged) and "Send decisions" refuses ("Email is not configured"), leaving decisions queued; nothing else breaks.
 
-The full database schema (tables, functions, triggers, RLS, storage bucket + policies, indexes) is in `supabase/schema.sql`. It is applied by hand in the Supabase SQL editor (no migration tooling) and is written to be safe to re-run. The test suite also applies it to the local test database on every run (see Testing). Keep it in sync with any DB change you make in the dashboard. The bottom of the file has commented-out snippets for giving someone a role, assigning judges to projects, and testing the guards.
+The full database schema (tables, functions, triggers, RLS, storage bucket + policies, indexes) is in `supabase/schema.sql`. It is applied by hand in the Supabase SQL editor (no migration tooling) and is written to be safe to re-run. The test suite also applies it to the local test database on every run (see Testing). Keep it in sync with any DB change you make in the dashboard. The bottom of the file has commented-out snippets for giving someone a role (needed only for the first owner; after that, owners use the People tab), assigning a judge to a project by hand (the Judging tab does this), and testing the guards.
 
 ## Architecture
 
 ### Auth & session refresh
 
-Login is Discord-first: `SignInForm` offers "Continue with Discord" (Supabase OAuth) plus a secondary email magic link (for applicants without Discord, and organizers/judges/sponsors). Google/GitHub were removed. Discord is required later, at RSVP: an accepted hacker who signed in by email links Discord from the portal via `supabase.auth.linkIdentity` (requires manual identity linking enabled in Supabase Auth settings). `ensureRows()` calls the `sync_discord_profile()` RPC on every portal visit to copy the linked identity onto `profiles.discord_id`/`discord_username`. `/auth/callback` only redirects to same-site `next` paths (`safeNextPath` in `src/lib/safeNext.ts`).
+Login is Discord-first: `SignInForm` offers "Continue with Discord" (Supabase OAuth) plus a secondary email magic link (for applicants without Discord, and staff/judges). Google/GitHub were removed. Discord is required later, at RSVP: an accepted hacker who signed in by email links Discord from the portal via `supabase.auth.linkIdentity` (requires manual identity linking enabled in Supabase Auth settings). `ensureRows()` calls the `sync_discord_profile()` RPC on every portal visit to copy the linked identity onto `profiles.discord_id`/`discord_username`. `/auth/callback` only redirects to same-site `next` paths (`safeNextPath` in `src/lib/safeNext.ts`).
 
 Supabase dashboard config (not in code): Discord provider enabled, Site URL/redirect URLs, and Resend as custom SMTP so magic-link emails aren't limited by Supabase's built-in mailer (these count against the Resend quota).
 
@@ -100,7 +100,7 @@ Every server action must re-check the caller's role itself (defense in depth): s
 
 ### Roles
 
-Four roles: **owner** (`/staff` dashboard, including sending decisions), **staff** (`/staff` dashboard; reviews applications), **judge** (`/judge` dashboard), **hacker** (no `user_roles` row; the default, gets `/portal`). One role per user. `/staff` is a tabbed shell (Applications, Check-in, Judging, owner-only People), all built; `/judge` lists the judge's assigned projects (see below).
+Four roles: **owner** (`/staff` dashboard, including sending decisions, capacity and the People tab), **staff** (`/staff` dashboard: reviews applications, runs check-in, sets up judging), **judge** (`/judge` dashboard), **hacker** (no `user_roles` row; the default, gets `/portal`). One role per user. `/staff` is a tabbed shell (Applications, Check-in, Judging, owner-only People), all built; `/judge` lists the judge's assigned projects (see below).
 - `src/lib/roles.ts` — constants only (`roles`, `ROLE_HOME`: owner/staff → `/staff`, judge → `/judge`, hacker → `/portal`; `STAFF_ROLES` = owner + staff, `OWNER_ROLES` = owner), safe for client components.
 - `src/lib/session.ts` — server-only: `getCurrentRole()` (user + role via the `user_role` RPC) and `requireRole(allowed)`, which returns `{ ok: true, supabase, user, role }` or `{ ok: false, error: "Not authenticated" | "Not allowed" }`.
 - The header has a single "Dashboard" link (outlined, like Login/Sign Out) to `ROLE_HOME[role]`.
@@ -177,7 +177,7 @@ Resumes are required to submit. Upload validation (10 MB, PDF signature check) a
 
 ### Hacker portal flow
 
-- The header (`Header.tsx` → `HeaderClient.tsx`) shows a "Dashboard" link to `/portal` for any signed-in user (desktop button + mobile menu).
+- The header (`Header.tsx` → `HeaderClient.tsx`) shows a "Dashboard" link for any signed-in user (desktop button + mobile menu), to `ROLE_HOME[role]`, so `/portal` for hackers.
 - `/portal` always renders for a logged-in user (no redirect home). One main card is driven by `registrations.status`: with no registration row it shows time left and an "Apply" link; a draft (they clicked Apply) shows "Continue application" plus a Profile/Agreements/Resume checklist (`isProfileComplete`/`hasRequiredConsents` in `validation.ts`) (or "Applications are closed"); pending shows submission date and `DECISIONS_BY`; accepted shows `RsvpButtons` (Step 1 Connect Discord, Step 2 confirm/decline); confirmed shows event info plus a drop-out link; waitlist ("You're on the waitlist": stay nearby, staff call names in order once check-in closes)/declined/rejected show a message (declined/rejected/closed also link to the hero mailing list, `/#mailing-list`). Edit Profile/Resume cards are hidden while in draft.
 - During the event (`walkInsOpen()`), anyone whose status isn't `confirmed` or `waitlist` (including no registration row) gets `WalkInCard` in place of the status card's contents: "At the event? Join the waitlist", Step 1 Connect Discord, Step 2 agreements (first/last name only when the profile lacks one, plus the eight consent checkboxes worded like `ProfileForm`) → `joinWalkIn`, Step 3 "You're ready. Show this screen to a staff member at check-in." `joinWalkIn` (in `src/app/portal/actions.ts`) refuses outside the window ("Walk-ins aren't open"), creates the registration via `ensureRows({ withRegistration: true })` (a `draft` for walk-ins), fills only empty name fields, and saves the consents (parsed by the shared `consentsFromForm` + `registrationFlagsSchema`, like `saveRegistrationFlags`). It doesn't change the status: staff then add them with `add_to_waitlist` on the Check-in tab. `ConnectDiscordButton` (`src/components/portal/`) is the Discord linking button shared by `RsvpButtons` and `WalkInCard`.
 - `/portal/profile` edits the profile + consents (`ProfileForm`), read-only once `editing_locked`. Free-response answers are **not** editable after submitting: `saveResponses` only works in `draft`, and the DB guard blocks non-admin changes to `responses` once status leaves `draft`.
@@ -194,6 +194,8 @@ Resumes are required to submit. Upload validation (10 MB, PDF signature check) a
 - `SendDecisionsBar` (client, owners only, hidden when nothing is queued): "**X accepted, Y rejected** not yet sent" + "Send decisions" (`window.confirm`, then `sendDecisions()`; disabled while sending). Shows "Sent N." plus failed / no-email / no-longer-pending counts and any error.
 
 ### Day-of check-in (`/staff/checkin`)
+
+Server actions in `src/app/staff/checkin/actions.ts` (staff/owner unless noted): `searchPeople` (up to 25 profiles by name/email/Discord username, with registration and `Check-in` attendance), `checkIn`/`undoCheckIn`, `addToWaitlist`/`admitFromWaitlist`/`removeFromWaitlist` (RPC errors passed through as-is), owner-only `setCapacity`, and `getCheckinSummary` returning `{ checkedIn, capacity, waitlist, error? }` (`waitlist` ordered by `waitlisted_at`; `error` is the first failed query, logged). `searchPeople` and `getCheckinSummary` are reads and don't revalidate. Pure helpers in `src/lib/checkin.ts`: `CheckinPerson`, `checkinState`, `profileSearchFilter` (the PostgREST `.or()` profile search, also used by the People tab) and the `etTime`/`etDateTime` ET formatters. Covered by `tests/actions/checkin.test.ts` and `tests/e2e/checkin.spec.ts`.
 
 `src/app/staff/checkin/page.tsx` (server) loads `getCheckinSummary()` and the caller's role. If the summary has an `error`, a red banner above the counter says "Couldn't load all check-in numbers: {error}. Refresh before admitting anyone." Counter: "**checked in** / **capacity** capacity · **n** on waitlist · **spots open** spots open" (spots open = capacity − checked in, never negative); with no capacity only "checked in · on waitlist". Owners also get `CapacityEditor` (number input + Save → `setCapacity`; blank clears it). Sub-views by query string: Search (default) and Waitlist (`?view=waitlist`, link "Waitlist (n)").
 - `CheckinSearch` (`src/components/staff/`, client): input debounced 250 ms → `searchPeople` (queries under 2 characters skip the call; only the newest response is shown). Each result shows name, email, Discord username or "Discord not linked", and per `checkinState`: Check in / "Checked in {time}" + Undo / "Waitlist #n" (position in the summary's waitlist, passed in as `waitlistIds`) / Add to waitlist / disabled "Link Discord first" / disabled "Agreements not accepted". After any action it re-runs the search (`searchPeople` doesn't revalidate) and calls `router.refresh()` for the counter. Action errors (RPC text) show under that row. Times (check-in, waitlist added) are in Eastern time with " ET" via `etTime`/`etDateTime` in `src/lib/checkin.ts`, so the server render matches the browser.
@@ -234,7 +236,7 @@ Form selects start blank when the answer isn't known (only `email` is prefilled,
 
 ### Landing page sections
 
-`src/app/page.tsx` composes independent section components from `src/components/sections/` (Hero, About, Tracks, Schedule, Sponsors, Partners, Teams, FAQ). Each section is intentionally kept in its own file so multiple people can work on different sections without merge conflicts — follow that convention when touching the landing page rather than inlining sections back into `page.tsx`.
+`src/app/page.tsx` composes independent section components from `src/components/sections/` (Hero, About, Tracks, Schedule, Sponsors, FAQ; `PartnersSections.tsx` and `TeamsSection.tsx` exist but aren't rendered). Each section is intentionally kept in its own file so multiple people can work on different sections without merge conflicts — follow that convention when touching the landing page rather than inlining sections back into `page.tsx`.
 
 ### FAQ via Google Docs
 
@@ -252,13 +254,11 @@ All in `src/lib/constants.ts`:
 
 ## Roadmap / WIP
 
-Planned modules that do not exist yet. Treat these as intended direction, not implemented features — check the code before assuming any of this is built.
+Planned modules that do not exist yet. Treat these as intended direction, not implemented features — check the code before assuming any of this is built. What's already built is described in the sections above.
 
 ### Hacker dashboard (extends `/portal`)
 
-- Profile view/edit, including resume upload (reuse existing `portal/profile` and `portal/resume` pages)
 - Event schedule in a calendar-style view
-- Built: status-driven home card with application, RSVP and Discord linking (see "Hacker portal flow")
 - Open ideas (not yet decided):
   - Check-in status
   - Event-day info: venue, wifi, parking, hacker guide, Discord/Devpost links (from `src/lib/constants.ts`)
@@ -270,11 +270,9 @@ Planned modules that do not exist yet. Treat these as intended direction, not im
 
 ### Judging
 
-- Built: Devpost import, judge assignment and the judge's project list (see "Judging" above).
 - To build: rubric scoring on `/judge` (`judge_scores`), owner results.
-- **Open question / WIP:** the rubric. (Distribution is decided: 3 judges per project, balanced, via "Assign judges", with manual add/remove.)
+- **Open question / WIP:** the rubric. (Distribution is decided and built: 3 judges per project, balanced, via "Assign judges", with manual add/remove.)
 
 ### Staff dashboard
 
-- `/staff` is a tabbed shell (Applications, Check-in, Judging, owner-only People), all built. Check-in server actions are in `src/app/staff/checkin/actions.ts` (`searchPeople`, `checkIn`/`undoCheckIn`, `addToWaitlist`/`admitFromWaitlist`/`removeFromWaitlist`, owner-only `setCapacity`, `getCheckinSummary` returning `{ checkedIn, capacity, waitlist, error? }` where `error` is the first failed query, logged; `searchPeople` and `getCheckinSummary` are reads and don't revalidate), with pure helpers (`CheckinPerson`, `checkinState`, `profileSearchFilter` for the PostgREST `.or()` profile search, `etTime`/`etDateTime` ET formatters) in `src/lib/checkin.ts`. DB is ready for check-in (`staff_check_in`/`staff_undo_check_in`), the on-site waitlist (`add_to_waitlist`/`admit_from_waitlist`/`remove_from_waitlist`), event capacity (`settings.capacity`) and role changes (`set_user_role`, used by the People tab).
 - To build (format still being decided): stats, workshop events + open/close QR self check-in via `events`, a full list of all hackers for staff, run-of-show schedule (internal staff timeline).

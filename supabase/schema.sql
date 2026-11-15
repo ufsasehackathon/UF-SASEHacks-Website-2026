@@ -104,7 +104,8 @@ create table if not exists public.user_roles (
   primary key (user_id, role)
 );
 
--- Roles: owner (everything), staff (stats, lookup, check-in), judge (scores assigned projects).
+-- Roles: owner (everything, incl. sending decisions and roles), staff (application review,
+-- check-in, judging setup), judge (sees assigned projects; scoring not built yet).
 -- No row = hacker. One role per user.
 alter table public.user_roles drop constraint if exists user_roles_role_check;
 update public.user_roles set role = 'owner' where role = 'admin';   -- old name
@@ -1070,7 +1071,7 @@ with check ( public.is_admin(auth.uid()) );
 -- ==========================
 -- RLS - STAFF (read-only)
 -- ==========================
--- Staff (and owners) can read hacker info for lookup/check-in. They get no write policies,
+-- Staff (and owners) can read hacker info for application review and check-in. They get no write policies,
 -- and the guard triggers still treat staff as non-admins.
 drop policy if exists "profiles_staff_select" on public.profiles;
 create policy "profiles_staff_select"
@@ -1144,7 +1145,7 @@ for select
 to authenticated
 using ( user_id = auth.uid() );
 
--- admins (who run check-in) have full access
+-- owners have full access (staff check in through staff_check_in / admit_from_waitlist)
 drop policy if exists "attendance_admin_all" on public.attendance;
 create policy "attendance_admin_all"
 on public.attendance
@@ -1354,9 +1355,9 @@ select pg_notify('pgrst', 'reload schema');
 -- ---------------------------------------------------------------------------
 -- Not executed automatically
 -- ---------------------------------------------------------------------------
--- Give someone a role (UUID from Dashboard > Authentication > Users). Owners can do this on the
+-- Give someone a role (UUID from Dashboard > Authentication > Users). Owners do this on the
 -- People tab (/staff/people), so this is only needed for the first owner. Use 'owner', 'staff' or 'judge';
--- to make someone a hacker again, delete their user_roles row.
+-- to make someone a hacker again, pick Hacker on the People tab (or delete their user_roles row).
 --   insert into public.profiles (id, email, full_name)
 --   values ('PASTE_USER_ID', 'PASTE_EMAIL', 'PASTE_NAME') on conflict (id) do nothing;
 --   insert into public.user_roles (user_id, role) values ('PASTE_USER_ID', 'owner')
@@ -1369,7 +1370,7 @@ select pg_notify('pgrst', 'reload schema');
 --   where status = 'draft' and resume_url is null and responses = '{}'::jsonb
 --     and not coalesce(accuracy_agreement, false);
 --
--- Assign a project to a judge (the staff dashboard's Judging tab does this now; SQL still works):
+-- Assign a project to a judge by hand (normally done on the staff dashboard's Judging tab):
 --   insert into public.judge_assignments (judge_id, project_id)
 --   select 'JUDGE_USER_ID', id from public.projects where title = 'PROJECT_TITLE'
 --   on conflict do nothing;

@@ -1,11 +1,11 @@
-# Work in Progress: Applications & Acceptance
+# Work in Progress: Applications, Acceptance & Dashboards
 
-Branch: `dev`. Design doc: `docs/superpowers/specs/2026-10-29-applications-acceptance-design.md`.
+Branch: `dev` (the staff/owner/judge dashboards are on `feat/staff-judge-dashboards`). Design docs: `docs/superpowers/specs/2026-10-29-applications-acceptance-design.md` and `docs/superpowers/specs/2026-11-12-staff-judge-dashboards-design.md`.
 Architecture notes are in `CLAUDE.md`. This file tracks what's left before launch.
 
 ## Status
 
-The code is built and `npm run lint` / `npx tsc --noEmit` pass. An automated test suite now covers most of the checklist below (see "Testing" in `CLAUDE.md`). Unit tests pass locally. **The DB, action and browser tests have not run yet:** they need Docker, so their first real run is in CI. Expect a few fixes on that first run.
+The code is built and `npm run lint` / `npx tsc --noEmit` pass. An automated test suite covers most of the checklist below (see "Testing" in `CLAUDE.md`). On `feat/staff-judge-dashboards` the whole suite (unit, DB/action and Playwright) passes locally against local Supabase in Docker; it still needs its first green run in CI.
 
 ## 0. Get the test suite green
 - [ ] Push this branch and open a PR to `dev` so the `Tests` workflow runs; fix whatever the first `integration` run turns up
@@ -17,6 +17,7 @@ The code is built and `npm run lint` / `npx tsc --noEmit` pass. An automated tes
 ## 1. Set up a test environment
 - [ ] Use a separate Supabase project for testing (recommended), or the real one before launch
 - [ ] Run `supabase/schema.sql` in the SQL editor
+  - Re-run the updated file in every hosted project (test and production) before launch: `feat/staff-judge-dashboards` adds `pending_decisions` and the decision RPCs, staff resume read, `registrations.waitlisted_at`, `settings.capacity`, the waitlist RPCs, staff access to `projects`/`judge_assignments`, integer `projects.table_number`, and `set_user_role` dropping judge assignments
   - Optionally run the commented "one-time cleanup" at the bottom to delete empty drafts created by plain portal visits before this change
   - Re-running it also drops the old shipping-address columns (`address_line1/2`, `city`, `state`, `zip_code`) from `profiles`
   - It also resets never-submitted `pending` rows (`submitted_at` null, from the old `pending` default) to `draft`
@@ -28,7 +29,7 @@ The code is built and `npm run lint` / `npx tsc --noEmit` pass. An automated tes
 - [ ] Vercel: set both to `true` for **Preview** (dev branch) and leave them unset/`false` for **Production**. Redeploy after changing them.
 
 ## 2. Test checklist
-**Covered by the automated suite** (tick once CI is green): every DB guard (`status`, `review_score`, `discord_id`, `responses` after submit, locked profile, staff as non-admin), RLS for every table and role, resume storage policies, every RPC (`submit_application` deadline/consents/resume, `rsvp` Discord/deadline/statuses, `set_user_role`, check-in), all portal server actions, and in the browser: magic-link login → Dashboard → Apply card, blank-form errors, full application with resume upload, "Continue application" checklist, status cards, RSVP with Discord linked → confirm → drop out, overdue RSVP, locked profile, role-based routing and Dashboard links, flags-off state, signed-out redirects.
+**Covered by the automated suite** (tick once CI is green): every DB guard (`status`, `review_score`, `discord_id`, `responses` after submit, locked profile, staff as non-admin), RLS for every table and role, resume storage policies, every RPC (`submit_application` deadline/consents/resume, `rsvp` Discord/deadline/statuses, `set_user_role`, check-in, decisions, waitlist), all portal and staff server actions (review/Send decisions with mocked Resend, check-in, judging, people, `joinWalkIn`), and in the browser: the Applications, Check-in, Judging and People tabs, the judge's project list, magic-link login → Dashboard → Apply card, blank-form errors, full application with resume upload, "Continue application" checklist, status cards, RSVP with Discord linked → confirm → drop out, overdue RSVP, locked profile, role-based routing and Dashboard links, flags-off state, signed-out redirects.
 - [ ] All of the above green in CI
 
 **Still manual** (can't be automated against the local stack):
@@ -36,17 +37,21 @@ The code is built and `npm run lint` / `npx tsc --noEmit` pass. An automated tes
 - [ ] Magic-link login works through Resend SMTP, and the "application received" / RSVP emails arrive from Resend
 - [ ] Account created before the schema update → portal shows Apply, not "Application received" (depends on hosted data)
 - [ ] Vercel Preview and Production flag values behave as expected
+- [ ] Walk-in card: view it in a browser once with `EVENT_START`/`EVENT_END` temporarily moved to include now (it never renders outside the event dates, so no e2e test sees it); connect Discord, accept agreements, then add the person from the Check-in tab
+- [ ] Verify the Devpost CSV column names (`Project Title`, `Submission Url`, `Project Status`, `Opt-In Prizes`, `About The Project`, submitter/team member names) against a real Devpost export; the parser and the fixture use the old importer's names
+- [ ] Decision emails through real Resend: queue a few accept/reject decisions, press "Send decisions", check the emails and the RSVP deadline in them
 
 ## 3. Decisions still needed from organizers
 - [x] **How application review/acceptance should work** (the old `/admin` was removed to be redone; it's in git history at `fa3e197`). Decided and built: staff/owners queue accept/reject on `/staff/applications`, owners send them with "Send decisions". The Resend 100/day limit is still a setup question (section 4)
-- [ ] **How to format the owner, staff and judge dashboards.** `/staff` now has its tab layout (Applications, Check-in, Judging, People); `/judge` lists the judge's assigned projects (no scoring yet; an earlier version with stats, check-in lookup, role management, Devpost import and scoring was removed; it's in git history at `fa3e197`)
+- [x] **How to format the owner, staff and judge dashboards.** Decided and built: `/staff` has tabs Applications, Check-in, Judging and People (owners); `/judge` lists the judge's assigned projects (no scoring yet). Stats, workshop QR check-in and run-of-show are still open (see Roadmap in `CLAUDE.md`)
 - [x] **How to distribute projects to judges**: 3 judges per project, balanced by "Assign judges" on the Judging tab, with manual add/remove per project
 - [ ] Judging rubric criteria
 - [ ] `APPLICATIONS_CLOSE` (and the same value in `public.settings.applications_close`)
-- [ ] `DECISIONS_BY`, `RSVP_WINDOW_DAYS` (7 days) and `EVENT_START`/`EVENT_END` (walk-in window; placeholders in `src/lib/constants.ts`), and event capacity (capacity is `public.settings.capacity`; owners edit it on the Check-in tab)
+- [ ] `DECISIONS_BY`, `RSVP_WINDOW_DAYS` (7 days) and `EVENT_START`/`EVENT_END` (walk-in window); all placeholders in `src/lib/constants.ts`
+- [ ] Event capacity: set it before the event (owners, Check-in tab; stored in `public.settings.capacity`)
 - [ ] Sending domain: `sasehacks.com` vs `ufsasehacks.com` (`DOMAIN` in constants is used for email links)
 - [ ] Final wording of the free-response question(s) (`APPLICATION_QUESTIONS` in `src/lib/validation.ts`)
-- [ ] Email copy review (`src/lib/email.ts`), including the new draft accepted/rejected decision emails
+- [ ] Email copy review (`src/lib/email.ts`), including the draft accepted/rejected decision emails
 
 ## 4. Email / Resend setup
 - [ ] Add and verify the sending domain in Resend (SPF, DKIM, DMARC records at the registrar)
@@ -67,11 +72,12 @@ Found while writing the tests (not fixed; the tests check what the DB ends up wi
 - `user_role()` / `is_*()` are executable by anyone (including anon), so a caller who knows a user's UUID can learn their role. Low risk; revoke from `anon` if it matters.
 - No "Save draft" button. Applicants fill out the form in one go. Adding one needs a looser validation schema.
 - No RSVP expiry right now. Hacker-triggered emails that fail aren't retried.
-- Decisions DB is in (`feat/staff-judge-dashboards`): `pending_decisions` table, `set_decisions`/`clear_decisions`/`apply_decisions` RPCs, and staff can read resumes (`resumes_staff_read`). Re-run `schema.sql` in each Supabase project to pick them up. The actions and the review UI that use them are in (below).
-- Check-in & waitlist DB is in (`feat/staff-judge-dashboards`): `registrations.waitlisted_at`, `settings.capacity`, and `add_to_waitlist`/`admit_from_waitlist`/`remove_from_waitlist` RPCs. Re-run `schema.sql` in each Supabase project. The check-in actions and the Check-in tab that use them are in (below).
+- Decisions DB is in (`feat/staff-judge-dashboards`): `pending_decisions` table, `set_decisions`/`clear_decisions`/`apply_decisions` RPCs, and staff can read resumes (`resumes_staff_read`). The actions and the review UI that use them are in (below).
+- Check-in & waitlist DB is in (`feat/staff-judge-dashboards`): `registrations.waitlisted_at`, `settings.capacity`, and `add_to_waitlist`/`admit_from_waitlist`/`remove_from_waitlist` RPCs. The check-in actions and the Check-in tab that use them are in (below).
 - Check-in actions are in (`feat/staff-judge-dashboards`): `src/app/staff/checkin/actions.ts` has `searchPeople` (up to 25 profiles by name/email/Discord username, with registration and `Check-in` attendance), `checkIn`/`undoCheckIn`, `addToWaitlist`/`admitFromWaitlist`/`removeFromWaitlist` (RPC errors passed through as-is), owner-only `setCapacity`, and `getCheckinSummary` (check-in count, capacity, waitlist by time added; for the page, so it doesn't revalidate; returns `error` with the first failed query and logs each failure, so the Check-in tab shows it instead of trusting a 0 count). Helpers (`checkinState`, `profileSearchFilter`) in `src/lib/checkin.ts`. The Check-in tab calls them (below).
   - The search strips `,()%*\"` but not `_`, so an underscore in a query matches any single character.
 - Application review actions are in (`feat/staff-judge-dashboards`): `src/app/staff/applications/actions.ts` has `setDecisions`/`clearDecisions`/`getResumeUrl` (staff/owner) and the owner-only `sendDecisions` (emails each queued decision in batches of 100, then applies the batch with `apply_decisions`; a failed batch stays queued and stops the run; applicants with no profile email stay queued; queued decisions for applicants no longer `pending` are cleared without emailing and reported as `stale`). The Applications tab calls them (below).
+  - Two owners pressing "Send decisions" at the same moment can email the same batch twice: the button is disabled while sending, but there's no server-side lock.
   - If `apply_decisions` fails after Resend accepted a batch, those emails went out but the decisions stay queued, so the next Send would email them again. The action reports it ("Emails were sent but the decisions weren't saved") and logs it; nothing retries or dedupes.
   - `sendDecisions` loads the queue with one PostgREST select, which returns at most 1000 rows by default; anything past that waits for the next Send.
 - Staff dashboard shell is in (`feat/staff-judge-dashboards`): `/staff` redirects to `/staff/applications`, with tabs Applications / Check-in / Judging / People (owner only). All four are built (below). `requireRole()` in `src/lib/session.ts` is the role check for the staff actions.
@@ -82,18 +88,18 @@ Found while writing the tests (not fixed; the tests check what the DB ends up wi
   - Capacity is a soft number: nothing stops staff admitting past it.
 - Portal walk-in card is in (`feat/staff-judge-dashboards`): during the event window (`walkInsOpen()`), anyone not `confirmed`/`waitlist` sees "At the event? Join the waitlist" (connect Discord, accept agreements via `joinWalkIn`, then show the screen to staff). The waitlist status card now explains the on-site waitlist. `joinWalkIn` is covered by action tests; e2e servers run outside the event window, so the card itself has no browser test.
   - Like `saveRegistrationFlags`, `joinWalkIn` returns `ok: true` without saving consents when the registration is locked (RLS matches 0 rows).
-- Judging DB is in (`feat/staff-judge-dashboards`): staff have full access to `projects`/`judge_assignments`, `projects.table_number` is an integer (re-running `schema.sql` converts old text values, keeping only digits; non-numeric values become null), and `set_user_role` drops a user's judge assignments when they stop being a judge. Re-run `schema.sql` in each Supabase project. The Judging tab uses them (below).
+- Judging DB is in (`feat/staff-judge-dashboards`): staff have full access to `projects`/`judge_assignments`, `projects.table_number` is an integer (re-running `schema.sql` converts old text values, keeping only digits; non-numeric values become null), and `set_user_role` drops a user's judge assignments when they stop being a judge. The Judging tab uses them (below).
 - Judging helpers are in (`feat/staff-judge-dashboards`): `parseDevpostCsv` (`src/lib/devpost.ts`, re-adds `papaparse`), `planAssignments` and `nextTableNumbers` (`src/lib/judging.ts`), unit-tested. The actions and the Judging tab use them (below).
   - `planAssignments` ignores existing rows for people who are no longer judges (they don't fill a slot or count toward load) and leaves them in place. Changing a role with hand SQL on `user_roles` doesn't run `set_user_role`'s cleanup, so such rows can exist; delete them by hand if they shouldn't show up anywhere.
 - Judging actions are in (`feat/staff-judge-dashboards`): `src/app/staff/judging/actions.ts` has `importDevpostCsv` (upsert by `devpost_url`, never touches `table_number`; new projects numbered after the max in CSV order), `assignJudges` (fills every project to 3 judges, only adding rows), `addJudge` (refuses non-judges), `removeJudge`, `setTableNumber` and `deleteProject`, all staff/owner. Action tests in `tests/actions/judging.test.ts`. The Judging tab calls them (below).
   - `importDevpostCsv` and `assignJudges` load `projects`/`judge_assignments` with plain PostgREST selects (at most 1000 rows each by default). Fine at hackathon scale.
   - Two imports at the same moment could both number new projects from the same max (duplicate table numbers, which the tab flags) or hit the `devpost_url` unique error on insert.
 - Judging tab and judge page are in (`feat/staff-judge-dashboards`): `/staff/judging` has the Devpost CSV import (`ProjectImport`) and the projects table (`ProjectsTable`: inline table numbers with duplicates flagged, judge chips with ×, "+ judge" select, Delete, and "Assign judges"). `/judge` lists the signed-in user's assigned projects by table number with "Open on Devpost" links. E2E: `tests/e2e/judging.spec.ts` with `tests/fixtures/devpost-submissions.csv`.
-  - [ ] Verify the CSV column names (`Project Title`, `Submission Url`, `Project Status`, `Opt-In Prizes`, `About The Project`, submitter/team member names) against a real Devpost export; the parser and the fixture use the old importer's names
+  - CSV column names still need checking against a real export (section 2).
   - No judge scoring yet (`judge_scores` is unused); rubric still to decide.
   - `judging.spec.ts`'s first test needs its three judges to be the only ones in the database, so it waits (up to ~60 s) for other specs' judges to be removed. Any new spec that creates judges must delete their roles in `afterEach` like `roles.spec.ts` does.
 - People tab is in (`feat/staff-judge-dashboards`): `/staff/people` (owners) lists role holders and searches profiles, with a role select per person (`setRole` → `set_user_role`; errors like "Can't remove the last owner" revert the select and show). Actions in `src/app/staff/people/actions.ts`, component `RoleManager`. Tests: `tests/actions/people.test.ts`, `tests/e2e/people.spec.ts`.
 - Discord bot to give confirmed hackers a role using `profiles.discord_id`: future work.
-- Staff can read admin notes/review scores (RLS is row-level). If a staff hacker lookup gets built, consider putting it behind an RPC.
+- Staff can read admin notes/review scores (RLS is row-level). The check-in search and Applications tab don't select them, but a staff user could query them directly; put staff lookups behind an RPC if that matters.
 - Unused landing sections `PartnersSections.tsx` and `TeamsSection.tsx` are kept but not rendered on `/`; delete them if they're not coming back.
-- Roadmap items (application review, dashboards, schedule view, workshop events + QR self check-in, teams, run-of-show): see CLAUDE.md.
+- Roadmap items (judge scoring + results, staff stats, full hacker list, schedule view, workshop events + QR self check-in, teams, run-of-show): see CLAUDE.md.
