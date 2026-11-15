@@ -35,7 +35,7 @@ export function parseDevpostCsv(text: string): { projects: ImportedProject[]; sk
   const parsed = Papa.parse<Record<string, string | undefined>>(text, {
     header: true,
     skipEmptyLines: true,
-    transformHeader: h => h.replace(/^﻿/, "").trim(),
+    transformHeader: h => h.replace(/^\uFEFF/, "").trim(),
   });
 
   const projects: ImportedProject[] = [];

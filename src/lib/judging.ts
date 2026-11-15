@@ -5,7 +5,8 @@ export type Assignment = { judgeId: string; projectId: string };
  * number of judges), spreading work evenly. Existing assignments are kept as they are, so
  * re-running never reshuffles anyone's list: only the new rows are returned.
  * `projectIds` should be in table-number order. Existing rows for people who aren't in
- * `judgeIds` still count as a judge on that project but not toward anyone's load.
+ * `judgeIds` (no longer judges) are left alone but ignored: they don't fill a project's
+ * slots or count toward anyone's load.
  */
 export function planAssignments(input: {
   projectIds: string[];
@@ -19,7 +20,8 @@ export function planAssignments(input: {
   const load = new Map(judgeIds.map(j => [j, 0]));
   const onProject = new Map<string, Set<string>>();
   for (const { judgeId, projectId } of existing) {
-    if (load.has(judgeId)) load.set(judgeId, load.get(judgeId)! + 1);
+    if (!load.has(judgeId)) continue;
+    load.set(judgeId, load.get(judgeId)! + 1);
     if (!onProject.has(projectId)) onProject.set(projectId, new Set());
     onProject.get(projectId)!.add(judgeId);
   }

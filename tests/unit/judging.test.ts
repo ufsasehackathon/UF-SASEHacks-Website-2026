@@ -91,10 +91,10 @@ describe("planAssignments", () => {
     expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);
   });
 
-  it("ignores existing rows for people who are no longer judges when counting load", () => {
+  it("ignores existing rows for people who are no longer judges for slots and load", () => {
     const judgeIds = ["a", "b"];
-    // "gone" is no longer a judge; their row on p1 still counts as a judge on p1,
-    // but not toward anyone's load.
+    // "gone" is no longer a judge. Their rows stay put but don't fill a slot on p1
+    // or count toward anyone's load.
     const existing: Row[] = [
       { judgeId: "gone", projectId: "p1" },
       { judgeId: "a", projectId: "p9" },
@@ -102,8 +102,24 @@ describe("planAssignments", () => {
     ];
     const rows = planAssignments({ projectIds: ["p1", "p2"], judgeIds, existing, perProject: 1 });
 
-    // p1 already has one judge (target 1). p2 goes to "b": a has load 1, b has 0.
-    expect(rows).toEqual([{ judgeId: "b", projectId: "p2" }]);
+    // p1 still needs a current judge: b (load 0) beats a (load 1). Then p2: a and b tie at 1, a comes first.
+    expect(rows).toEqual([
+      { judgeId: "b", projectId: "p1" },
+      { judgeId: "a", projectId: "p2" },
+    ]);
+  });
+
+  it("fills a project with a stale row up to the target with current judges", () => {
+    const judgeIds = ["a", "b", "c"];
+    const existing: Row[] = [
+      { judgeId: "gone", projectId: "p1" },
+      { judgeId: "a", projectId: "p1" },
+    ];
+    const rows = planAssignments({ projectIds: ["p1"], judgeIds, existing });
+
+    expect(rows.map(r => r.judgeId).sort()).toEqual(["b", "c"]);
+    const current = new Set([...existing, ...rows].filter(r => judgeIds.includes(r.judgeId)).map(r => r.judgeId));
+    expect(current.size).toBe(3);
   });
 });
 

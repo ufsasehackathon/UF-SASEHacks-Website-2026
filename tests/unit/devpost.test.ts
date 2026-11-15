@@ -47,7 +47,7 @@ describe("parseDevpostCsv", () => {
 
   it("handles a BOM, CRLF and quoted commas/newlines", () => {
     const csv =
-      "﻿Project Title,Submission Url,About The Project\r\n" +
+      "\uFEFFProject Title,Submission Url,About The Project\r\n" +
       '"Hello, World",https://devpost.com/software/hello,"Line one\r\nLine two, with a comma"\r\n' +
       "Second,https://devpost.com/software/second,Plain\r\n";
 
