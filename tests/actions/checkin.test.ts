@@ -49,6 +49,7 @@ describe("searchPeople", () => {
     await withDiscord(hacker, `gator${t}`);
     actAs(staff);
     expect(await checkin.checkIn(hacker.id)).toEqual({ ok: true });
+    revalidatePath.mockClear();
 
     const other = await createUser({ firstName: `Other${t}` });
 
@@ -72,7 +73,8 @@ describe("searchPeople", () => {
     expect(res.people).toEqual([
       expect.objectContaining({ userId: other.id, status: null, hasDiscord: false, hasConsents: false, checkedInAt: null }),
     ]);
-    expect(revalidatePath).toHaveBeenCalledWith("/staff/checkin");
+    // a read: searching doesn't re-render the page
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 
   it('doesn\'t error on "O\'Brien, (x)"', async () => {
@@ -206,6 +208,30 @@ describe("getCheckinSummary", () => {
     expect(summary.waitlist[0].waitlistedAt).toBeTruthy();
 
     await sql(`update public.settings set capacity = null`);
+  });
+
+  it("reports a failed query instead of showing a silent 0", async () => {
+    const hacker = await createUser();
+    await setRegistration(hacker.id, { status: "confirmed" });
+    actAs(staff);
+    expect(await checkin.checkIn(hacker.id)).toEqual({ ok: true });
+    await sql(`update public.settings set capacity = 300`);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // a real database failure: signed-in users lose read access to settings for this call
+    await sql(`revoke select on public.settings from authenticated`);
+    let summary;
+    try {
+      summary = await checkin.getCheckinSummary();
+    } finally {
+      await sql(`grant select on public.settings to authenticated`);
+      await sql(`update public.settings set capacity = null`);
+    }
+
+    expect(summary.error).toMatch(/permission denied/i);
+    expect(summary.capacity).toBeNull();
+    expect(summary.checkedIn).toBe(1); // the queries that worked still report
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining("settings"), expect.stringMatching(/permission denied/i));
   });
 
   it("hackers get an empty summary", async () => {

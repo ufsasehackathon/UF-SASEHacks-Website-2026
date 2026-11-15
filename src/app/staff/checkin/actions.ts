@@ -64,7 +64,7 @@ function toPerson(p: ProfileRow, reg: RegistrationRow | null, checkedInAt: strin
   };
 }
 
-/** Staff/owner: up to 25 people whose name, email or Discord username matches `query` */
+/** Staff/owner: up to 25 people whose name, email or Discord username matches `query`. A read, so no revalidate. */
 export async function searchPeople(query: string): Promise<{ ok: boolean; error?: string; people: CheckinPerson[] }> {
   const auth = await requireRole(STAFF_ROLES);
   if (!auth.ok) return { ...auth, people: [] };
@@ -84,7 +84,6 @@ export async function searchPeople(query: string): Promise<{ ok: boolean; error?
   const { times, error: timesError } = await checkInTimes(auth.supabase, rows.map(r => r.id));
   if (timesError) return { ok: false, error: timesError, people: [] };
 
-  revalidatePath("/staff/checkin");
   return { ok: true, people: rows.map(r => toPerson(r, one(r.registrations), times.get(r.id) ?? null)) };
 }
 
@@ -143,12 +142,25 @@ export async function setCapacity(capacity: number | null): Promise<{ ok: boolea
 /**
  * Staff/owner: main-event check-in count, capacity, and the on-site waitlist in the order people
  * were added. Read by the page while rendering, so it doesn't revalidate. Empty for anyone else.
+ * `error` is the first query that failed (each failure is logged); the other fields then hold
+ * whatever did load, so the page must show the error rather than trust the numbers.
  */
-export async function getCheckinSummary(): Promise<{ checkedIn: number; capacity: number | null; waitlist: CheckinPerson[] }> {
-  const empty = { checkedIn: 0, capacity: null, waitlist: [] };
+export async function getCheckinSummary(): Promise<{
+  checkedIn: number;
+  capacity: number | null;
+  waitlist: CheckinPerson[];
+  error?: string;
+}> {
   const auth = await requireRole(STAFF_ROLES);
-  if (!auth.ok) return empty;
+  if (!auth.ok) return { checkedIn: 0, capacity: null, waitlist: [] };
   const { supabase } = auth;
+
+  const errors: string[] = [];
+  const fail = (what: string, message: string | undefined) => {
+    if (!message) return;
+    console.error(`getCheckinSummary: loading ${what} failed:`, message);
+    errors.push(message);
+  };
 
   const [event, settings, waitlist] = await Promise.all([
     supabase.from("events").select("id").eq("event_name", "Check-in").maybeSingle(),
@@ -159,22 +171,28 @@ export async function getCheckinSummary(): Promise<{ checkedIn: number; capacity
       .eq("status", "waitlist")
       .order("waitlisted_at", { ascending: true, nullsFirst: false }),
   ]);
+  fail("the Check-in event", event.error?.message);
+  fail("settings", settings.error?.message);
+  fail("the waitlist", waitlist.error?.message);
 
   let checkedIn = 0;
   if (event.data) {
-    const { count } = await supabase
+    const { count, error } = await supabase
       .from("attendance")
       .select("id", { count: "exact", head: true })
       .eq("event_id", event.data.id);
+    fail("check-ins", error?.message);
     checkedIn = count ?? 0;
   }
 
   const regs = (waitlist.data ?? []) as unknown as (RegistrationRow & { profiles: ProfileRow | ProfileRow[] | null })[];
-  const { times } = await checkInTimes(supabase, regs.map(r => r.user_id));
+  const { times, error: timesError } = await checkInTimes(supabase, regs.map(r => r.user_id));
+  fail("waitlist check-ins", timesError);
   const people = regs.flatMap(r => {
     const profile = one(r.profiles);
     return profile ? [toPerson(profile, r, times.get(r.user_id) ?? null)] : [];
   });
 
-  return { checkedIn, capacity: (settings.data?.capacity as number | null) ?? null, waitlist: people };
+  const summary = { checkedIn, capacity: (settings.data?.capacity as number | null) ?? null, waitlist: people };
+  return errors.length > 0 ? { ...summary, error: errors[0] } : summary;
 }
