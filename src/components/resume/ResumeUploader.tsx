@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { MAX_RESUME_BYTES } from "@/lib/resume";
 
 export default function ResumeUploader({
   action,
@@ -30,8 +31,8 @@ export default function ResumeUploader({
       setMsg("Only PDF files are allowed.");
       return;
     }
-    if (file.size > 10 * 1024 * 1024) {
-      setMsg("File too large (max 10 MB).");
+    if (file.size > MAX_RESUME_BYTES) {
+      setMsg("File too large (max 4 MB).");
       return;
     }
 

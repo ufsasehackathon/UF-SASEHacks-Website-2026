@@ -134,8 +134,26 @@ describe("sendEmailBatch", () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)[0].reply_to).toBe("organizers@sasehacks.com");
   });
 
-  it("reports a Resend HTTP error", async () => {
-    fetchMock.mockResolvedValue(new Response("bad", { status: 422 }));
-    expect(await sendEmailBatch([email])).toEqual({ ok: false, error: "Resend error 422" });
+  it("reports a Resend HTTP error with Resend's message", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({ statusCode: 422, name: "validation_error", message: "Invalid `to` field. Please use our testing email address instead of domains like `example.com`." }),
+        { status: 422, headers: { "Content-Type": "application/json" } }
+      )
+    );
+    expect(await sendEmailBatch([email])).toEqual({
+      ok: false,
+      error: "Resend error 422: Invalid `to` field. Please use our testing email address instead of domains like `example.com`.",
+    });
+  });
+
+  it("falls back to the raw response text, cut to 200 characters", async () => {
+    fetchMock.mockResolvedValue(new Response("x".repeat(300), { status: 500 }));
+    expect(await sendEmailBatch([email])).toEqual({ ok: false, error: `Resend error 500: ${"x".repeat(200)}` });
+  });
+
+  it("reports just the status when the body is empty", async () => {
+    fetchMock.mockResolvedValue(new Response("", { status: 502 }));
+    expect(await sendEmailBatch([email])).toEqual({ ok: false, error: "Resend error 502" });
   });
 });

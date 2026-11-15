@@ -512,6 +512,18 @@ describe("joinWalkIn", () => {
     expect((await getProfile(user.id))?.first_name).toBe("Ada");
   });
 
+  it("reports a locked registration instead of claiming success", async () => {
+    const user = await createUser({ firstName: "Ada" });
+    await setRegistration(user.id, { status: "rejected", editing_locked: true, can_photograph: true });
+    actAs(user);
+    expect(await portal.joinWalkIn(walkInForm(undefined, { can_photograph: false }))).toEqual({
+      ok: false,
+      error: "Couldn't save your agreements. Ask a staff member for help.",
+    });
+    expect((await getRegistration(user.id))?.can_photograph).toBe(true);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
   it("refuses outside the event window", async () => {
     walkInsOpenFlag = false;
     const user = await createUser();

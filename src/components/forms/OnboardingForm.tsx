@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { useForm, type DefaultValues } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { MAX_RESUME_BYTES } from "@/lib/resume";
 import {
   profileSchema,
   type ProfileFormValues,
@@ -115,6 +116,12 @@ export default function OnboardingForm({
     // Validate resume (required, but one already on file counts)
     if (!resumeFile && !hasResume) {
       setServerMsg("You must upload a resume to continue.");
+      setIsSubmitting(false);
+      return;
+    }
+    // Bigger files can't reach the server action (4 MB body limit), so catch them here
+    if (resumeFile && resumeFile.size > MAX_RESUME_BYTES) {
+      setServerMsg("File too large (max 4 MB).");
       setIsSubmitting(false);
       return;
     }
@@ -573,7 +580,7 @@ export default function OnboardingForm({
             <p className="mt-2 text-xs text-green-600">You already have a resume on file.</p>
           )}
           <p className="mt-2 text-xs text-gray-500">
-            Maximum file size: 10 MB
+            Maximum file size: 4 MB
           </p>
         </div>
         </div>

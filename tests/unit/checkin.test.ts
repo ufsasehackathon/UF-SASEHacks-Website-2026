@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkinState, etDateTime, etTime, profileSearchFilter, type CheckinPerson, type CheckinState } from "@/lib/checkin";
+import { checkinState, etDate, etDateTime, etTime, profileSearchFilter, type CheckinPerson, type CheckinState } from "@/lib/checkin";
 
 function person(overrides: Partial<CheckinPerson> = {}): CheckinPerson {
   return {
@@ -87,5 +87,14 @@ describe("ET formatters", () => {
 
   it("uses the Eastern date across midnight UTC", () => {
     expect(etDateTime("2026-11-15T03:30:00Z")).toBe("Nov 14, 10:30 PM ET");
+  });
+
+  it("etDate shows the Eastern date with the year", () => {
+    expect(etDate(iso)).toBe("Nov 14, 2026");
+  });
+
+  it("etDate uses the previous Eastern day for an early-morning UTC instant", () => {
+    // 2027-01-01 02:00 UTC is still Dec 31, 2026 in New York
+    expect(etDate("2027-01-01T02:00:00Z")).toBe("Dec 31, 2026");
   });
 });

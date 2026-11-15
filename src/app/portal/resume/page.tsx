@@ -134,7 +134,7 @@ export default async function ResumePage() {
             </h2>
             <ResumeUploader action={uploadResume} disabled={locked} />
             <p className="mt-4 font-[family-name:var(--font-body)] text-xs text-gray-500">
-              PDFs only, max 10 MB. Your file is stored privately at <code className="bg-gray-100 px-1 py-0.5 rounded">resumes/{user?.id}/resume.pdf</code>.
+              PDFs only, max 4 MB. Your file is stored privately at <code className="bg-gray-100 px-1 py-0.5 rounded">resumes/{user?.id}/resume.pdf</code>.
             </p>
           </div>
         </div>

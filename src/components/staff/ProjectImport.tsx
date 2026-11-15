@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { importDevpostCsv } from "@/app/staff/judging/actions";
+import { CSV_TOO_LARGE, MAX_CSV_BYTES } from "@/lib/devpost";
 
 /** Upload Devpost's submissions export; new projects get table numbers, existing ones are updated */
 export function ProjectImport() {
@@ -17,13 +18,28 @@ export function ProjectImport() {
     const formData = new FormData(e.currentTarget);
     setResult(null);
     setError(null);
+    // Larger files never reach the action (server action body limit), so check here first
+    const file = formData.get("file");
+    if (file instanceof File && file.size > MAX_CSV_BYTES) {
+      setError(CSV_TOO_LARGE);
+      return;
+    }
     startTransition(async () => {
-      const res = await importDevpostCsv(formData);
+      let res: Awaited<ReturnType<typeof importDevpostCsv>>;
+      try {
+        res = await importDevpostCsv(formData);
+      } catch (err) {
+        setError(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+        return;
+      }
       if (!res.ok) {
         setError(res.error ?? "Import failed");
         return;
       }
-      setResult(`Imported ${res.created ?? 0} new, ${res.updated ?? 0} updated, ${res.skippedDrafts ?? 0} drafts skipped.`);
+      const unread = res.rowErrors ? ` ${res.rowErrors} rows couldn't be read.` : "";
+      setResult(
+        `Imported ${res.created ?? 0} new, ${res.updated ?? 0} updated, ${res.skippedDrafts ?? 0} drafts skipped.${unread}`
+      );
       formRef.current?.reset();
       router.refresh();
     });

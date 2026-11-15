@@ -50,18 +50,18 @@ describe("saveResume", () => {
     expect(await saveResume(client, USER, form(new File([], "r.pdf", { type: "application/pdf" })))).toEqual({ ok: false, error: "Empty file" });
   });
 
-  it("rejects files over 10 MB", async () => {
+  it("rejects files over 4 MB", async () => {
     const { client, calls } = fakeClient();
-    const big = new Uint8Array(10 * 1024 * 1024 + 1);
+    const big = new Uint8Array(4 * 1024 * 1024 + 1);
     big.set(pdfBytes());
     const result = await saveResume(client, USER, form(new File([big], "r.pdf", { type: "application/pdf" })));
-    expect(result).toEqual({ ok: false, error: "File too large (max 10 MB)" });
+    expect(result).toEqual({ ok: false, error: "File too large (max 4 MB)" });
     expect(calls.upload).toHaveLength(0);
   });
 
-  it("accepts exactly 10 MB", async () => {
+  it("accepts exactly 4 MB", async () => {
     const { client } = fakeClient();
-    const max = new Uint8Array(10 * 1024 * 1024);
+    const max = new Uint8Array(4 * 1024 * 1024);
     max.set(pdfBytes());
     expect((await saveResume(client, USER, form(new File([max], "r.pdf", { type: "application/pdf" })))).ok).toBe(true);
   });

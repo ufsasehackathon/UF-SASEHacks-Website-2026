@@ -53,6 +53,18 @@ export function CheckinSearch({ waitlistIds }: { waitlistIds: string[] }) {
     });
   }
 
+  // Waitlisting someone who was accepted or is still in review undoes that, so ask first
+  function waitlist(p: CheckinPerson) {
+    const warning =
+      p.status === "accepted"
+        ? `Move ${p.name} to the waitlist? They were accepted but haven't RSVP'd, so they'll lose their RSVP and wait in line like a walk-in.`
+        : p.status === "pending"
+          ? `Move ${p.name} to the waitlist? Their application hasn't been decided yet, so it will be taken out of review.`
+          : null;
+    if (warning && !window.confirm(warning)) return;
+    act(p.userId, addToWaitlist);
+  }
+
   return (
     <div className="space-y-4 font-[family-name:var(--font-body)] text-[#560700]">
       <input
@@ -95,7 +107,7 @@ export function CheckinSearch({ waitlistIds }: { waitlistIds: string[] }) {
                     )}
                     {state === "waitlisted" && <span>{position > 0 ? `Waitlist #${position}` : "Waitlist"}</span>}
                     {state === "can_waitlist" && (
-                      <button type="button" disabled={busy} onClick={() => act(p.userId, addToWaitlist)} className={smallButton}>
+                      <button type="button" disabled={busy} onClick={() => waitlist(p)} className={smallButton}>
                         Add to waitlist
                       </button>
                     )}

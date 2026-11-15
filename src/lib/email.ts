@@ -88,6 +88,17 @@ ${button(DISCORD_INVITE, "Join the Discord")}
   }
 }
 
+/** Resend's error message (from its JSON body), else the raw body cut to 200 characters */
+function resendErrorDetail(text: string) {
+  try {
+    const message = (JSON.parse(text) as { message?: unknown })?.message;
+    if (typeof message === "string" && message.trim()) return message.trim();
+  } catch {
+    // not JSON
+  }
+  return text.trim().slice(0, 200);
+}
+
 /**
  * Send up to 100 emails in one Resend batch request. Resend validates the whole batch, so
  * this either sends all of them or none.
@@ -118,7 +129,8 @@ export async function sendEmailBatch(emails: OutgoingEmail[]): Promise<{ ok: boo
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     console.error("Resend batch failed:", res.status, text);
-    return { ok: false, error: `Resend error ${res.status}` };
+    const detail = resendErrorDetail(text);
+    return { ok: false, error: detail ? `Resend error ${res.status}: ${detail}` : `Resend error ${res.status}` };
   }
   return { ok: true };
 }

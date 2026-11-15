@@ -76,7 +76,7 @@ describe("importDevpostCsv", () => {
         { title: "Chomp", slug: "chomp" },
       ])
     );
-    expect(res).toEqual({ ok: true, created: 3, updated: 0, skippedDrafts: 1 });
+    expect(res).toEqual({ ok: true, created: 3, updated: 0, skippedDrafts: 1, rowErrors: 0 });
 
     expect((await projects()).map(p => [p.table_number, p.title, p.devpost_url])).toEqual([
       [1, "Gator Bot", "https://devpost.com/software/gator-bot"],
@@ -106,7 +106,7 @@ describe("importDevpostCsv", () => {
         { title: "Later Entry", slug: "later-entry" },
       ])
     );
-    expect(res).toEqual({ ok: true, created: 2, updated: 2, skippedDrafts: 0 });
+    expect(res).toEqual({ ok: true, created: 2, updated: 2, skippedDrafts: 0, rowErrors: 0 });
 
     expect((await projects()).map(p => [p.table_number, p.title])).toEqual([
       [1, "Gator Bot v2"],
@@ -134,6 +134,23 @@ describe("importDevpostCsv", () => {
     expect(await judging.importDevpostCsv(empty)).toEqual({ ok: false, error: "Choose a CSV file" });
     expect(await judging.importDevpostCsv(new FormData())).toEqual({ ok: false, error: "Choose a CSV file" });
     expect(await projects()).toEqual([]);
+  });
+
+  it('rejects a file over 4 MB with "CSV is too large (4 MB max)"', async () => {
+    actAs(staff);
+    const header = "Project Title,Submission Url,Project Status\n";
+    const big = header + "x".repeat(4 * 1024 * 1024 + 1 - header.length);
+    const res = await judging.importDevpostCsv(fileForm(new File([big], "submissions.csv", { type: "text/csv" }), "file"));
+    expect(res).toEqual({ ok: false, error: "CSV is too large (4 MB max)" });
+    expect(await projects()).toEqual([]);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("reports rows it couldn't read", async () => {
+    actAs(staff);
+    const csv = ["Project Title,Submission Url", "Good,https://devpost.com/software/good", '"Broken,https://devpost.com/software/broken'];
+    const res = await judging.importDevpostCsv(fileForm(new File([csv.join("\n")], "submissions.csv", { type: "text/csv" }), "file"));
+    expect(res).toEqual({ ok: true, created: 1, updated: 0, skippedDrafts: 0, rowErrors: 1 });
   });
 });
 
@@ -178,6 +195,15 @@ describe("assignJudges", () => {
     expect(after.filter(r => r.project_id !== late).map(key).sort()).toEqual(before.map(key).sort());
     expect(after.filter(r => r.project_id === late)).toHaveLength(3);
   });
+
+  it('hackers get "Not allowed" and nothing is assigned', async () => {
+    await createUser({ role: "judge" });
+    await seedProjects(2);
+    actAs(await createUser());
+    expect(await judging.assignJudges()).toEqual({ ok: false, error: "Not allowed" });
+    expect(await assignments()).toEqual([]);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
 });
 
 describe("addJudge / removeJudge", () => {
@@ -211,6 +237,15 @@ describe("addJudge / removeJudge", () => {
     }
     expect(await assignments()).toEqual([]);
   });
+
+  it('addJudge: hackers get "Not allowed" and nothing is assigned', async () => {
+    const judge = await createUser({ role: "judge" });
+    const [project] = await seedProjects(1);
+    actAs(await createUser());
+    expect(await judging.addJudge(project, judge.id)).toEqual({ ok: false, error: "Not allowed" });
+    expect(await assignments()).toEqual([]);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
 });
 
 describe("setTableNumber", () => {
@@ -234,6 +269,14 @@ describe("setTableNumber", () => {
     expect(await judging.setTableNumber(project, null)).toEqual({ ok: true });
     expect((await projects())[0].table_number).toBeNull();
   });
+
+  it('hackers get "Not allowed" and the table number stays', async () => {
+    const [project] = await seedProjects(1);
+    actAs(await createUser());
+    expect(await judging.setTableNumber(project, 12)).toEqual({ ok: false, error: "Not allowed" });
+    expect((await projects())[0].table_number).toBe(1);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
 });
 
 describe("deleteProject", () => {
@@ -252,5 +295,13 @@ describe("deleteProject", () => {
     expect(await assignments()).toEqual([{ judge_id: judge.id, project_id: kept }]);
     expect(revalidatePath).toHaveBeenCalledWith("/staff/judging");
     expect(revalidatePath).toHaveBeenCalledWith("/judge");
+  });
+
+  it('hackers get "Not allowed" and the project stays', async () => {
+    const [project] = await seedProjects(1);
+    actAs(await createUser());
+    expect(await judging.deleteProject(project)).toEqual({ ok: false, error: "Not allowed" });
+    expect((await projects()).map(p => p.id)).toEqual([project]);
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 });

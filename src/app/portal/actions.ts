@@ -319,11 +319,14 @@ export async function joinWalkIn(formData: FormData): Promise<{ ok: boolean; err
     }
   }
 
-  const { error } = await supabase
+  // No row back = nothing saved (locked registration, or ensureRows couldn't create one)
+  const { data: saved, error } = await supabase
     .from("registrations")
     .update(parsed.data)
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .select("user_id");
   if (error) return { ok: false, error: error.message };
+  if (!saved?.length) return { ok: false, error: "Couldn't save your agreements. Ask a staff member for help." };
 
   revalidatePath("/portal");
   return { ok: true };

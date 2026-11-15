@@ -3,11 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/session";
 import { STAFF_ROLES } from "@/lib/roles";
-import { parseDevpostCsv } from "@/lib/devpost";
+import { CSV_TOO_LARGE, MAX_CSV_BYTES, parseDevpostCsv } from "@/lib/devpost";
 import { nextTableNumbers, planAssignments } from "@/lib/judging";
-
-/** 10 MB */
-const MAX_CSV_BYTES = 10 * 1024 * 1024;
 
 function revalidateJudging() {
   revalidatePath("/staff/judging");
@@ -21,16 +18,23 @@ function revalidateJudging() {
  */
 export async function importDevpostCsv(
   formData: FormData
-): Promise<{ ok: boolean; error?: string; created?: number; updated?: number; skippedDrafts?: number }> {
+): Promise<{
+  ok: boolean;
+  error?: string;
+  created?: number;
+  updated?: number;
+  skippedDrafts?: number;
+  rowErrors?: number;
+}> {
   const auth = await requireRole(STAFF_ROLES);
   if (!auth.ok) return auth;
   const { supabase } = auth;
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Choose a CSV file" };
-  if (file.size > MAX_CSV_BYTES) return { ok: false, error: "CSV is too large (10 MB max)" };
+  if (file.size > MAX_CSV_BYTES) return { ok: false, error: CSV_TOO_LARGE };
 
-  const { projects, skippedDrafts, error: parseError } = parseDevpostCsv(await file.text());
+  const { projects, skippedDrafts, rowErrors, error: parseError } = parseDevpostCsv(await file.text());
   if (parseError) return { ok: false, error: parseError };
 
   const { data: current, error: loadError } = await supabase.from("projects").select("devpost_url, table_number");
@@ -56,7 +60,7 @@ export async function importDevpostCsv(
   }
 
   revalidateJudging();
-  return { ok: true, created: added.length, updated: existing.length, skippedDrafts };
+  return { ok: true, created: added.length, updated: existing.length, skippedDrafts, rowErrors };
 }
 
 /**

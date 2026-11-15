@@ -21,6 +21,7 @@ describe("parseDevpostCsv", () => {
         },
       ],
       skippedDrafts: 0,
+      rowErrors: 0,
     });
   });
 
@@ -102,12 +103,30 @@ describe("parseDevpostCsv", () => {
 
   it('returns the "Is this the Devpost submissions export?" error for an unrelated CSV', () => {
     const csv = "Name,Email\nJane,jane@example.com\n";
-    expect(parseDevpostCsv(csv)).toEqual({ projects: [], skippedDrafts: 0, error: NO_PROJECTS });
-    expect(parseDevpostCsv("")).toEqual({ projects: [], skippedDrafts: 0, error: NO_PROJECTS });
+    expect(parseDevpostCsv(csv)).toEqual({ projects: [], skippedDrafts: 0, rowErrors: 0, error: NO_PROJECTS });
+    expect(parseDevpostCsv("")).toEqual({ projects: [], skippedDrafts: 0, rowErrors: 0, error: NO_PROJECTS });
   });
 
   it("returns the error when every row is a draft", () => {
     const csv = "Project Title,Submission Url,Project Status\nD,https://devpost.com/software/d,Draft\n";
-    expect(parseDevpostCsv(csv)).toEqual({ projects: [], skippedDrafts: 1, error: NO_PROJECTS });
+    expect(parseDevpostCsv(csv)).toEqual({ projects: [], skippedDrafts: 1, rowErrors: 0, error: NO_PROJECTS });
+  });
+
+  it("counts rows papaparse couldn't read (an unclosed quote)", () => {
+    const csv = [
+      "Project Title,Submission Url",
+      "Good,https://devpost.com/software/good",
+      '"Broken,https://devpost.com/software/broken',
+    ].join("\n");
+    const result = parseDevpostCsv(csv);
+    expect(result.projects.map(p => p.title)).toEqual(["Good"]);
+    expect(result.rowErrors).toBe(1);
+  });
+
+  it("doesn't count short or long rows that were still read", () => {
+    const csv = "Project Title,Submission Url,Track\nShort,https://devpost.com/software/short\nLong,https://devpost.com/software/long,AI,extra\n";
+    const result = parseDevpostCsv(csv);
+    expect(result.projects.map(p => p.title)).toEqual(["Short", "Long"]);
+    expect(result.rowErrors).toBe(0);
   });
 });

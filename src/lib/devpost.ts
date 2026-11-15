@@ -8,6 +8,10 @@ export type ImportedProject = {
   team: string | null;
 };
 
+/** Largest CSV the import accepts. Matches `experimental.serverActions.bodySizeLimit` in next.config.ts. */
+export const MAX_CSV_BYTES = 4 * 1024 * 1024;
+export const CSV_TOO_LARGE = "CSV is too large (4 MB max)";
+
 const NO_PROJECTS = "No submitted projects found. Is this the Devpost submissions export?";
 
 /** First non-empty value among the named columns (case-insensitive), trimmed; "" when none. */
@@ -29,14 +33,24 @@ function fullName(row: Record<string, string | undefined>, prefix: string) {
 /**
  * Parse Devpost's submissions export (Manage hackathon > Metrics > Export submissions).
  * Drafts are skipped and counted; rows without a title or URL are dropped; for duplicate
- * URLs the first row wins.
+ * URLs the first row wins. `rowErrors` counts rows papaparse couldn't read (e.g. an unclosed
+ * quote); rows with too few or too many fields are still read, so they don't count.
  */
-export function parseDevpostCsv(text: string): { projects: ImportedProject[]; skippedDrafts: number; error?: string } {
+export function parseDevpostCsv(text: string): {
+  projects: ImportedProject[];
+  skippedDrafts: number;
+  rowErrors: number;
+  error?: string;
+} {
   const parsed = Papa.parse<Record<string, string | undefined>>(text, {
     header: true,
     skipEmptyLines: true,
     transformHeader: h => h.replace(/^\uFEFF/, "").trim(),
   });
+
+  const rowErrors = new Set(
+    parsed.errors.filter(e => e.type !== "FieldMismatch" && typeof e.row === "number").map(e => e.row)
+  ).size;
 
   const projects: ImportedProject[] = [];
   const seen = new Set<string>();
@@ -65,6 +79,6 @@ export function parseDevpostCsv(text: string): { projects: ImportedProject[]; sk
     });
   }
 
-  if (!projects.length) return { projects, skippedDrafts, error: NO_PROJECTS };
-  return { projects, skippedDrafts };
+  if (!projects.length) return { projects, skippedDrafts, rowErrors, error: NO_PROJECTS };
+  return { projects, skippedDrafts, rowErrors };
 }

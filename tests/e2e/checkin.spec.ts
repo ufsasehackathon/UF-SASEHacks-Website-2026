@@ -60,8 +60,15 @@ test("accepted no-RSVP goes to the waitlist and gets admitted", async ({ page, c
   await signInStaff(page, context, baseURL!);
 
   await page.getByLabel("Search people").fill(name);
+  let message = "";
+  page.once("dialog", d => {
+    message = d.message();
+    void d.accept();
+  });
   await result(page, name).getByRole("button", { name: "Add to waitlist" }).click();
   await expect(result(page, name)).toContainText("Waitlist #1");
+  expect(message).toContain(name);
+  expect(message).toContain("lose their RSVP");
   await expect(counter(page)).toHaveText(checkedIn(0));
 
   await page.getByRole("link", { name: /^Waitlist \(\d+\)$/ }).click();
@@ -72,6 +79,26 @@ test("accepted no-RSVP goes to the waitlist and gets admitted", async ({ page, c
   await expect(row).toHaveCount(0);
   await expect(counter(page)).toHaveText(checkedIn(1));
   expect((await getRegistration(user.id))?.status).toBe("confirmed");
+});
+
+test("dismissing the waitlist confirmation leaves an accepted hacker accepted", async ({ page, context, baseURL }) => {
+  const name = `Stay Put ${randomUUID().slice(0, 6)}`;
+  const user = await hacker(name);
+  await accept(user.id);
+  await signInStaff(page, context, baseURL!);
+
+  await page.getByLabel("Search people").fill(name);
+  let asked = false;
+  page.once("dialog", d => {
+    asked = true;
+    void d.dismiss();
+  });
+  await result(page, name).getByRole("button", { name: "Add to waitlist" }).click();
+  await expect.poll(() => asked).toBe(true);
+  await expect(result(page, name).getByRole("button", { name: "Add to waitlist" })).toBeEnabled();
+  expect((await sql<{ status: string }>(`select status from public.registrations where user_id = $1`, [user.id]))[0].status).toBe(
+    "accepted"
+  );
 });
 
 test("removing someone from the waitlist asks first", async ({ page, context, baseURL }) => {

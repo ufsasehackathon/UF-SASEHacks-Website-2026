@@ -1,7 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-/** 10 MB */
-const MAX_BYTES = 10 * 1024 * 1024;
+/**
+ * 4 MB. Resumes are uploaded through server actions, whose body limit is 4 MB
+ * (`experimental.serverActions.bodySizeLimit` in next.config.ts; Vercel caps bodies at ~4.5 MB).
+ */
+export const MAX_RESUME_BYTES = 4 * 1024 * 1024;
 
 /** Cheap PDF signature check: first 5 bytes should be "%PDF-" */
 function looksLikePdf(bytes: Uint8Array) {
@@ -28,7 +31,7 @@ export async function saveResume(
   if (!file) return { ok: false, error: "No file provided" };
 
   if (file.size === 0) return { ok: false, error: "Empty file" };
-  if (file.size > MAX_BYTES) return { ok: false, error: "File too large (max 10 MB)" };
+  if (file.size > MAX_RESUME_BYTES) return { ok: false, error: "File too large (max 4 MB)" };
 
   const type = file.type?.toLowerCase() || "";
   if (type && type !== "application/pdf") {

@@ -6,6 +6,11 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  experimental: {
+    // Resume and Devpost CSV uploads go through server actions (default limit 1 MB). Vercel caps
+    // request bodies at ~4.5 MB. Keep in sync with MAX_RESUME_BYTES and MAX_CSV_BYTES.
+    serverActions: { bodySizeLimit: "4mb" },
+  },
 };
 
 export default nextConfig;

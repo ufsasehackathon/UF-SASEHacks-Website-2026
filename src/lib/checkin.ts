@@ -43,6 +43,11 @@ export function etTime(iso: string) {
   return new Date(iso).toLocaleTimeString("en-US", { timeZone: ET, hour: "numeric", minute: "2-digit" }) + " ET";
 }
 
+/** "Nov 14, 2026" (the Eastern date) */
+export function etDate(iso: string) {
+  return new Date(iso).toLocaleDateString("en-US", { timeZone: ET, month: "short", day: "numeric", year: "numeric" });
+}
+
 /** "Nov 14, 3:05 PM ET" */
 export function etDateTime(iso: string) {
   return (

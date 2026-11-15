@@ -9,6 +9,7 @@ import {
   type ApplicantRow,
   type ApplicantState,
 } from "@/lib/applications";
+import { etDate } from "@/lib/checkin";
 import { APPLICATION_QUESTIONS } from "@/lib/validation";
 import { clearDecisions, getResumeUrl, setDecisions } from "@/app/staff/applications/actions";
 
@@ -28,8 +29,9 @@ const STATE_STYLES: Record<ApplicantState, string> = {
 const smallButton =
   "rounded-lg border border-[#560700]/30 bg-white px-3 py-1 text-sm text-[#560700] hover:bg-[#560700]/10 disabled:opacity-50";
 
+// Eastern date, so the server render and the browser agree
 function fmtDate(iso: string | null) {
-  return iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—";
+  return iso ? etDate(iso) : "—";
 }
 
 /** Review table for /staff/applications: filter + search, per-row and bulk accept/reject/undo, expandable details */
