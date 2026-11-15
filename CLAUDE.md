@@ -49,7 +49,7 @@ npm run test:coverage
 
 Four layers, all in `tests/`. CI (`.github/workflows/test.yml`) runs them on every PR and on pushes to `dev`/`main`: a `static` job (lint, `tsc`, unit tests) then an `integration` job (local Supabase in Docker, DB/action tests, Playwright). CI needs no secrets.
 
-- `tests/unit/` — pure logic in `src/lib/` (validation, FAQ parser, email templates/sending with mocked `fetch`, `saveResume` with a fake client, `safeNextPath`, flags/deadline, search helpers, check-in state/search filter/ET time formatters).
+- `tests/unit/` — pure logic in `src/lib/` (validation, FAQ parser, email templates/sending with mocked `fetch`, `saveResume` with a fake client, `safeNextPath`, flags/deadline, search helpers, check-in state/search filter/ET time formatters, Devpost CSV parser, judge assignment planner).
 - `tests/db/` — guards, RLS per table × role, storage policies, every RPC. Each test signs in real users with JWTs (anon key), so RLS and guards apply.
 - `tests/actions/` — server actions called directly, with `@/lib/supabase/server`, `next/cache` and `next/navigation` mocked (`tests/helpers/next.ts`; `actAs(user)` picks the caller). `session.test.ts` covers `requireRole` the same way. Resend is mocked by `mockResend()` (also in `tests/helpers/next.ts`), which routes `api.resend.com` calls to a `vi.fn`.
 - `tests/e2e/` — Playwright against two `next dev` servers: port 3100 with both flags on, 3101 with both off (`flags-off.spec.ts`). They build into `.next-e2e*` (`NEXT_DIST_DIR`, read by `next.config.ts`) so they don't clobber `npm run dev`. Sessions are injected as Supabase auth cookies (`signIn` in `tests/e2e/support.ts`); one test does the real magic link via Mailpit.
@@ -256,7 +256,8 @@ Planned modules that do not exist yet. Treat these as intended direction, not im
 ### Judging
 
 - DB is ready (`projects`, `judge_assignments`, `judge_scores` + RLS); `/judge` is a placeholder.
-- To build: project import (Devpost CSV), judge view of assigned projects + rubric scoring, owner results.
+- Pure helpers are in (no UI yet): `parseDevpostCsv(text)` in `src/lib/devpost.ts` (papaparse; Devpost submissions export → `ImportedProject[]`, drafts skipped and counted, rows without title/URL dropped, first of duplicate URLs kept, `error` when nothing usable) and, in `src/lib/judging.ts`, `planAssignments({ projectIds, judgeIds, existing, perProject? })` (default 3 judges per project, capped at the judge count; least-loaded judge first, ties by `judgeIds` order; only returns new rows, never reshuffles existing ones) and `nextTableNumbers(currentMax, count)`.
+- To build: project import (Devpost CSV) action/UI, judge view of assigned projects + rubric scoring, owner results.
 - **Open question / WIP:** how projects get distributed to judges (manual per judge, auto-distribute N judges per project, by track, number of rounds), and the rubric.
 
 ### Staff dashboard
