@@ -58,7 +58,7 @@ How the test database works:
 - Local Supabase is configured by `supabase/config.toml` (tests only: manual identity linking on, email confirmations off, high auth rate limits, site URL `localhost:3100`). There are no `supabase/migrations`; the test setup (`tests/setup/schema.ts`) applies `supabase/schema.sql` itself, so the tests always run the real schema file.
 - Connection details come from `supabase status -o env` (`tests/setup/env.ts`), never from `.env`/`.env.local`, and the setup refuses non-localhost URLs. Tests truncate tables, so they must never point at the hosted project.
 - App data is wiped before each test file (`RESET_SQL`). Tests make users with unique emails via `createUser({ role })` in `tests/helpers/users.ts`.
-- Real Discord OAuth can't run in tests: `linkDiscord(userId)` inserts an `auth.identities` row, which is all `rsvp()` and `sync_discord_profile()` read. Owner decisions (no review UI yet) are made with `accept()`/`setRegistration()` through the service role, like the SQL editor.
+- Real Discord OAuth can't run in tests: `linkDiscord(userId)` inserts an `auth.identities` row, which is all `rsvp()` and `sync_discord_profile()` read. Tests that need an already-decided applicant set it with `accept()`/`setRegistration()` through the service role, like the SQL editor; the review UI itself is covered by `tests/e2e/review.spec.ts`.
 - E2E servers get explicit empty `RESEND_API_KEY`/`GOOGLE_FAQ_DOC_ID` and local Supabase keys. Next only fills env keys that aren't already set, so the real values in `.env` never load.
 
 When you change the schema, an RPC, a guard or an action, add or update the matching tests. Without Docker locally, run `npm run test:unit`, lint and `tsc`, and let CI run the rest.
@@ -100,7 +100,7 @@ Every server action must re-check the caller's role itself (defense in depth): s
 
 ### Roles
 
-Four roles: **owner** (`/staff` dashboard; will own application review once it's redesigned), **staff** (`/staff` dashboard), **judge** (`/judge` dashboard), **hacker** (no `user_roles` row; the default, gets `/portal`). One role per user. `/staff` is a tabbed shell whose tabs are still placeholders, and `/judge` is a placeholder (see below); the DB side (RPCs, RLS, judging tables) is in place for them.
+Four roles: **owner** (`/staff` dashboard, including sending decisions), **staff** (`/staff` dashboard; reviews applications), **judge** (`/judge` dashboard), **hacker** (no `user_roles` row; the default, gets `/portal`). One role per user. `/staff` is a tabbed shell whose Applications tab is built and other tabs are still placeholders, and `/judge` is a placeholder (see below); the DB side (RPCs, RLS, judging tables) is in place for them.
 - `src/lib/roles.ts` — constants only (`roles`, `ROLE_HOME`: owner/staff → `/staff`, judge → `/judge`, hacker → `/portal`; `STAFF_ROLES` = owner + staff, `OWNER_ROLES` = owner), safe for client components.
 - `src/lib/session.ts` — server-only: `getCurrentRole()` (user + role via the `user_role` RPC) and `requireRole(allowed)`, which returns `{ ok: true, supabase, user, role }` or `{ ok: false, error: "Not authenticated" | "Not allowed" }`.
 - The header has a single "Dashboard" link (outlined, like Login/Sign Out) to `ROLE_HOME[role]`.
@@ -133,7 +133,7 @@ Tables (all in `public`, all with RLS enabled):
 | `waitlist` | on-site waitlist, set by staff on event day (`add_to_waitlist`) | staff (`add_to_waitlist`) |
 | `rejected` | rejected | owner's Send decisions (`apply_decisions`) |
 
-`confirmed` means attending, which is what `self_check_in` requires. Accept/reject decisions are queued in `pending_decisions` (`set_decisions`) and only reach `registrations.status` when an owner sends them (`apply_decisions`). The server actions for this are in `src/app/staff/applications/actions.ts` (see Email below). **The review UI that calls them isn't built yet**: until it is, queue/apply them from the SQL editor or update `registrations.status` directly (set `accepted_at`/`rsvp_deadline` when accepting). Status labels and the ordered list live in `src/lib/validation.ts` (`registrationStatuses`, `registrationStatusLabels`).
+`confirmed` means attending, which is what `self_check_in` requires. Accept/reject decisions are queued in `pending_decisions` (`set_decisions`) and only reach `registrations.status` when an owner sends them (`apply_decisions`). Staff/owners queue them on the Applications tab (see "Application review" below); the server actions are in `src/app/staff/applications/actions.ts` (see Email below). Review only accepts/rejects; `waitlist` is the event-day waitlist (`add_to_waitlist`). Status labels and the ordered list live in `src/lib/validation.ts` (`registrationStatuses`, `registrationStatusLabels`).
 
 #### Email (`src/lib/email.ts`)
 
@@ -184,7 +184,13 @@ Resumes are required to submit. Upload validation (10 MB, PDF signature check) a
 
 ### Owner / staff / judge dashboards
 
-`/staff` (owner + staff): `src/app/staff/layout.tsx` renders `PageShell` (`src/components/PageShell.tsx`) titled "Owner Dashboard" or "Staff Dashboard" by role, with `StaffTabs` (`src/components/staff/StaffTabs.tsx`, client; active tab from `usePathname()`) above the page. Tabs: Applications `/staff/applications`, Check-in `/staff/checkin`, Judging `/staff/judging`, and People `/staff/people` (owner only; the page redirects non-owners to `/staff/applications`). `/staff` itself redirects to `/staff/applications`, so the header's "Dashboard" link lands there. The four tab pages are "Coming next." placeholders for now.
+`/staff` (owner + staff): `src/app/staff/layout.tsx` renders `PageShell` (`src/components/PageShell.tsx`) titled "Owner Dashboard" or "Staff Dashboard" by role, with `StaffTabs` (`src/components/staff/StaffTabs.tsx`, client; active tab from `usePathname()`) above the page. Tabs: Applications `/staff/applications`, Check-in `/staff/checkin`, Judging `/staff/judging`, and People `/staff/people` (owner only; the page redirects non-owners to `/staff/applications`). `/staff` itself redirects to `/staff/applications`, so the header's "Dashboard" link lands there. The Applications tab is built (see "Application review" below); Check-in, Judging and People are "Coming next." placeholders for now.
+
+### Application review (`/staff/applications`)
+
+`src/app/staff/applications/page.tsx` (server) loads every registration with `status <> 'draft'` embedded with its `profiles(...)` row, plus all `pending_decisions`, and maps them to `ApplicantRow[]` (major/level of study as labels from `validation.ts`). Pure helpers in `src/lib/applications.ts` (unit-tested): `applicantState(row)` (an unsent decision only counts while `status = 'pending'`, giving `accepted_unsent`/`rejected_unsent`), `APPLICANT_FILTERS` (Pending, Accepted · not sent, Rejected · not sent, Accepted, Confirmed, Declined, Rejected, Waitlist, All), `filterApplicants(rows, filter, query)` (query matches name/email/school, case-insensitive) and `unsentCounts(rows)`.
+- `ApplicationsTable` (`src/components/staff/`, client): filter (default Pending) + search, columns checkbox/name/school/grad year/submitted/state/actions. Only `pending` rows have checkboxes; the header checkbox selects the visible ones. Bulk bar "N selected · Accept N · Reject N · Clear" (Clear only deselects). Row actions: Accept/Reject for Pending, Undo (`clearDecisions`) for unsent decisions, none once sent. Reject (single or bulk) asks `window.confirm` naming the applicants. Clicking a name expands the details (email, major, level, grad year, hackathon experience, skill, each `APPLICATION_QUESTIONS` answer, LinkedIn as a link only when it's http(s), and a Resume button that opens a `getResumeUrl` signed link in a new tab).
+- `SendDecisionsBar` (client, owners only, hidden when nothing is queued): "**X accepted, Y rejected** not yet sent" + "Send decisions" (`window.confirm`, then `sendDecisions()`; disabled while sending). Shows "Sent N." plus failed / no-email / no-longer-pending counts and any error.
 
 `/judge` (judge + owner) is still an empty "Coming soon" page using `PageShell`. Its layout enforces the role check. Keep these pages lean: add features only once they're designed.
 
@@ -226,12 +232,6 @@ All in `src/lib/constants.ts`:
 
 Planned modules that do not exist yet. Treat these as intended direction, not implemented features — check the code before assuming any of this is built.
 
-### Application review (owner)
-
-- Being redesigned. The old `/admin` (table, bulk status, 1–5 score + notes, waitlist promotion, RSVP expiry, batched decision emails, CSV/resume export) was removed; it's in git history at `fa3e197` if any of it is worth reusing.
-- DB pieces still in place: statuses + guards, `notes`/`review_score`/`reviewed_by`, `accepted_at`/`rsvp_deadline`, `last_emailed_status`, staff/owner read on resumes, and the decision queue (`pending_decisions` + `set_decisions`/`clear_decisions`/`apply_decisions`).
-- Server actions in place (`src/app/staff/applications/actions.ts`): `setDecisions`/`clearDecisions`/`getResumeUrl` (staff/owner) and `sendDecisions` (owner). The Applications tab UI that calls them is still to build.
-
 ### Hacker dashboard (extends `/portal`)
 
 - Profile view/edit, including resume upload (reuse existing `portal/profile` and `portal/resume` pages)
@@ -254,5 +254,5 @@ Planned modules that do not exist yet. Treat these as intended direction, not im
 
 ### Staff dashboard
 
-- `/staff` is a tabbed shell (Applications, Check-in, Judging, owner-only People) whose tab pages are placeholders. DB is ready for check-in (`staff_check_in`/`staff_undo_check_in`), the on-site waitlist (`add_to_waitlist`/`admit_from_waitlist`/`remove_from_waitlist`), event capacity (`settings.capacity`) and role changes (`set_user_role`).
+- `/staff` is a tabbed shell (Applications, Check-in, Judging, owner-only People); Applications is built, the other tab pages are placeholders. DB is ready for check-in (`staff_check_in`/`staff_undo_check_in`), the on-site waitlist (`add_to_waitlist`/`admit_from_waitlist`/`remove_from_waitlist`), event capacity (`settings.capacity`) and role changes (`set_user_role`).
 - To build (format still being decided): stats, hacker lookup + check-in, owner role management, workshop events + open/close QR self check-in via `events`, a full list of all hackers for staff, run-of-show schedule (internal staff timeline).
