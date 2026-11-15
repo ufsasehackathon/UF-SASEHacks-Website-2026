@@ -2,17 +2,11 @@
 
 import { Fragment, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { CheckinPerson } from "@/lib/checkin";
+import { etDateTime, type CheckinPerson } from "@/lib/checkin";
 import { admitFromWaitlist, removeFromWaitlist } from "@/app/staff/checkin/actions";
 
 const smallButton =
   "rounded-lg border border-[#560700]/30 bg-white px-3 py-1 text-sm text-[#560700] hover:bg-[#560700]/10 disabled:opacity-50";
-
-function fmtAdded(iso: string | null) {
-  return iso
-    ? new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
-    : "—";
-}
 
 /** On-site waitlist in the order people were added (from the page's summary): admit & check in, or remove */
 export function WaitlistTable({ people }: { people: CheckinPerson[] }) {
@@ -60,7 +54,7 @@ export function WaitlistTable({ people }: { people: CheckinPerson[] }) {
               <tr data-testid="waitlist-row" className={errors[p.userId] ? "" : "border-b border-[#560700]/10 last:border-0"}>
                 <td className="p-3">{i + 1}</td>
                 <td className="p-3 font-semibold">{p.name}</td>
-                <td className="p-3 whitespace-nowrap" suppressHydrationWarning>{fmtAdded(p.waitlistedAt)}</td>
+                <td className="p-3 whitespace-nowrap">{p.waitlistedAt ? etDateTime(p.waitlistedAt) : "—"}</td>
                 <td className="p-3 whitespace-nowrap">
                   <div className="flex items-center gap-2">
                     <button type="button" disabled={busy} onClick={() => act(p.userId, admitFromWaitlist)} className={smallButton}>

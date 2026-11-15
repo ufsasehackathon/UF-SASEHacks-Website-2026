@@ -45,7 +45,7 @@ test("staff search and check in a confirmed hacker, then undo", async ({ page, c
   await page.getByLabel("Search people").fill(name);
   await expect(result(page, name)).toContainText("checky_dc");
   await result(page, name).getByRole("button", { name: "Check in" }).click();
-  await expect(result(page, name)).toContainText("Checked in");
+  await expect(result(page, name)).toContainText(/Checked in \d{1,2}:\d{2} [AP]M ET/);
   await expect(counter(page)).toHaveText(checkedIn(1));
 
   await result(page, name).getByRole("button", { name: "Undo" }).click();

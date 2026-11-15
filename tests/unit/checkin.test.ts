@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkinState, profileSearchFilter, type CheckinPerson, type CheckinState } from "@/lib/checkin";
+import { checkinState, etDateTime, etTime, profileSearchFilter, type CheckinPerson, type CheckinState } from "@/lib/checkin";
 
 function person(overrides: Partial<CheckinPerson> = {}): CheckinPerson {
   return {
@@ -70,5 +70,22 @@ describe("profileSearchFilter", () => {
     expect(filter).toContain("and(first_name.ilike.%Jane%,last_name.ilike.%Doe%)");
     expect(profileSearchFilter("Mary Ann Smith")).toContain("and(first_name.ilike.%Mary%,last_name.ilike.%Ann Smith%)");
     expect(profileSearchFilter("Jane")).not.toContain("and(");
+  });
+});
+
+describe("ET formatters", () => {
+  // 2026-11-14 20:05 UTC = 3:05 PM in New York (EST, UTC-5), whatever timezone the machine is in
+  const iso = "2026-11-14T20:05:00Z";
+
+  it("etTime shows the Eastern wall-clock time", () => {
+    expect(etTime(iso)).toBe("3:05 PM ET");
+  });
+
+  it("etDateTime shows the Eastern date and time", () => {
+    expect(etDateTime(iso)).toBe("Nov 14, 3:05 PM ET");
+  });
+
+  it("uses the Eastern date across midnight UTC", () => {
+    expect(etDateTime("2026-11-15T03:30:00Z")).toBe("Nov 14, 10:30 PM ET");
   });
 });

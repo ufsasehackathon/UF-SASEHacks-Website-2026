@@ -34,6 +34,23 @@ export function checkinState(p: CheckinPerson): CheckinState {
   return "can_waitlist";
 }
 
+// Check-in times are shown in Eastern time (the event's timezone), not the server's or the browser's,
+// so the server render and the browser agree. " ET" suffix like the portal and emails.
+const ET = "America/New_York";
+
+/** "3:05 PM ET" */
+export function etTime(iso: string) {
+  return new Date(iso).toLocaleTimeString("en-US", { timeZone: ET, hour: "numeric", minute: "2-digit" }) + " ET";
+}
+
+/** "Nov 14, 3:05 PM ET" */
+export function etDateTime(iso: string) {
+  return (
+    new Date(iso).toLocaleString("en-US", { timeZone: ET, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) +
+    " ET"
+  );
+}
+
 const SEARCH_FIELDS = ["first_name", "last_name", "full_name", "email", "discord_username"] as const;
 
 /**

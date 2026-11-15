@@ -2,15 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { checkinState, type CheckinPerson } from "@/lib/checkin";
+import { checkinState, etTime, type CheckinPerson } from "@/lib/checkin";
 import { addToWaitlist, checkIn, searchPeople, undoCheckIn } from "@/app/staff/checkin/actions";
 
 const smallButton =
   "rounded-lg border border-[#560700]/30 bg-white px-3 py-1 text-sm text-[#560700] hover:bg-[#560700]/10 disabled:opacity-50";
-
-function fmtTime(iso: string) {
-  return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-}
 
 /**
  * Check-in tab search: debounced name/email/Discord lookup with the check-in or waitlist action for
@@ -91,7 +87,7 @@ export function CheckinSearch({ waitlistIds }: { waitlistIds: string[] }) {
                     )}
                     {state === "checked_in" && (
                       <>
-                        <span className="text-green-800">Checked in {fmtTime(p.checkedInAt!)}</span>
+                        <span className="text-green-800">Checked in {etTime(p.checkedInAt!)}</span>
                         <button type="button" disabled={busy} onClick={() => act(p.userId, undoCheckIn)} className={smallButton}>
                           Undo
                         </button>
