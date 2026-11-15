@@ -196,7 +196,9 @@ export default function OnboardingForm({
   };
 
   return (
-    <form onSubmit={form.handleSubmit(submit)} className="space-y-6">
+    // noValidate: the free-response `required` attribute would otherwise make the browser block
+    // submit before the inline field errors run (required answers are checked in `submit`).
+    <form onSubmit={form.handleSubmit(submit)} noValidate className="space-y-6">
       {/* Personal Information */}
       <div className="relative">
         <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-[#560700] to-[#ff9b5e] opacity-10 blur-xl"></div>

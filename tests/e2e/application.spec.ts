@@ -75,10 +75,12 @@ test("full application: fill, upload, submit", async ({ page, context, baseURL }
   await page.getByRole("button", { name: "United States", exact: true }).click();
 
   await page.locator('input[type="file"]').setInputFiles(resumeFile(testInfo.outputPath()));
-  await page.locator("textarea").first().fill("A robot that sorts recycling.");
+  // By label: the optional "Accessibility needs" textarea comes first in the DOM
+  await page.getByRole("textbox", { name: /^What do you want to build or learn at SASEHacks\?/ }).fill("A robot that sorts recycling.");
 
-  for (const consent of ["MLH Code of Conduct *", "MLH Data Sharing *", "Accuracy Agreement *", "Terms and Conditions *", "Code of Conduct *"]) {
-    await page.getByLabel(consent, { exact: false }).first().check();
+  // Anchored, so "Code of Conduct *" doesn't match the MLH one
+  for (const consent of [/^MLH Code of Conduct \*/, /^MLH Data Sharing \*/, /^Accuracy Agreement \*/, /^Terms and Conditions \*/, /^Code of Conduct \*/]) {
+    await page.getByRole("checkbox", { name: consent }).check();
   }
 
   await page.getByRole("button", { name: "Submit Application" }).click();

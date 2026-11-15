@@ -9,6 +9,7 @@ The code is built and `npm run lint` / `npx tsc --noEmit` pass. An automated tes
 
 ## 0. Get the test suite green
 - [ ] Push this branch and open a PR to `dev` so the `Tests` workflow runs; fix whatever the first `integration` run turns up
+  - [x] The two onboarding e2e tests (blank submit, full application) failed on `dev` too: the free-response textarea's native `required` blocked submit (the form is now `noValidate`), and the test filled the wrong textarea and checkbox
 - [ ] GitHub → Settings → Branches: require the `static` and `integration` checks on `main` (and `dev` if wanted)
 - [ ] Optional, for running DB/E2E tests locally: install Docker Desktop or OrbStack, then `npm run db:start`
 - [ ] Confirm the hosted project's Postgres major version and set `[db] major_version` in `supabase/config.toml` to match (CLI default is 17)
