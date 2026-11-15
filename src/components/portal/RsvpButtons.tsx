@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { rsvp } from "@/app/portal/actions";
+import ConnectDiscordButton from "./ConnectDiscordButton";
 
 type Props = {
   status: "accepted" | "confirmed";
@@ -13,20 +13,7 @@ type Props = {
 export default function RsvpButtons({ status, discordUsername }: Props) {
   const router = useRouter();
   const [busy, startTransition] = useTransition();
-  const [linking, setLinking] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
-  async function connectDiscord() {
-    setErr(null);
-    setLinking(true);
-    const supabase = createSupabaseBrowserClient();
-    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent("/portal")}`;
-    const { error } = await supabase.auth.linkIdentity({ provider: "discord", options: { redirectTo } });
-    if (error) {
-      setErr(error.message);
-      setLinking(false);
-    }
-  }
 
   function respond(attending: boolean) {
     if (!attending && !confirm("Release your spot? This can't be undone, and your spot will go to someone on the waitlist.")) {
@@ -64,14 +51,7 @@ export default function RsvpButtons({ status, discordUsername }: Props) {
         {discordUsername ? (
           <p className="text-sm font-semibold text-green-700">✓ Connected as {discordUsername}</p>
         ) : (
-          <button
-            type="button"
-            onClick={connectDiscord}
-            disabled={linking}
-            className="w-full inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white bg-[#5865F2] hover:bg-[#4752C4] transition-all shadow-lg disabled:opacity-50"
-          >
-            {linking ? "Redirecting to Discord..." : "Connect Discord"}
-          </button>
+          <ConnectDiscordButton />
         )}
       </div>
 

@@ -11,6 +11,7 @@ import {
   DECISIONS_BY,
   APPLICATIONS_CLOSE,
   registrationsOpen,
+  walkInsOpen,
 } from "@/lib/constants";
 import {
   registrationStatusLabels,
@@ -19,6 +20,7 @@ import {
   type RegistrationStatus,
 } from "@/lib/validation";
 import RsvpButtons from "@/components/portal/RsvpButtons";
+import WalkInCard from "@/components/portal/WalkInCard";
 
 const fmt = (iso: string) =>
   new Date(iso).toLocaleString("en-US", { timeZone: "America/New_York", dateStyle: "long", timeStyle: "short" }) + " ET";
@@ -46,6 +48,8 @@ export default async function PortalPage() {
   const locked = reg?.editing_locked ?? false;
   const name = profile?.first_name || profile?.full_name || "";
   const rsvpOverdue = status === "accepted" && reg?.rsvp_deadline && Date.now() > Date.parse(reg.rsvp_deadline);
+  // During the event, anyone not attending or already waiting can get ready for the on-site waitlist
+  const walkIn = walkInsOpen() && status !== "confirmed" && status !== "waitlist";
 
   // Draft checklist. Profile/consents are only saved when the form is submitted, so these
   // mostly matter for someone whose submit failed partway (e.g. on the resume step).
@@ -128,7 +132,7 @@ export default async function PortalPage() {
     },
     waitlist: {
       title: "You're on the waitlist",
-      body: <>We had more applicants than spots. If one opens up, we&apos;ll email you right away.</>,
+      body: <>Stay nearby: once check-in closes, staff will call names from the waitlist in order.</>,
     },
     declined: {
       title: "Spot released",
@@ -179,84 +183,94 @@ export default async function PortalPage() {
           <div className="relative">
             <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-[#560700] to-[#ff9b5e] opacity-20 blur-xl"></div>
             <div className="relative backdrop-blur-xl bg-white/90 rounded-3xl shadow-2xl border border-[#FFE4B3]/30 p-8">
-              <div className="flex items-center gap-3 mb-6">
-                <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${getStatusColor(status)} flex items-center justify-center text-white text-2xl font-bold shadow-lg`}>
-                  {getStatusIcon(status)}
-                </div>
-                <div>
-                  <h2 className="font-[family-name:var(--font-heading)] text-2xl text-[#560700]">
-                    {title}
-                  </h2>
-                  <p className="font-[family-name:var(--font-body)] text-xs text-gray-600">
-                    Status: {reg ? registrationStatusLabels[status] : "Not started"}
-                  </p>
-                </div>
-              </div>
+              {walkIn ? (
+                <WalkInCard
+                  discordUsername={profile?.discord_username ?? null}
+                  hasConsents={hasRequiredConsents(reg)}
+                  needsName={!profile?.first_name || !profile?.last_name}
+                />
+              ) : (
+                <>
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${getStatusColor(status)} flex items-center justify-center text-white text-2xl font-bold shadow-lg`}>
+                      {getStatusIcon(status)}
+                    </div>
+                    <div>
+                      <h2 className="font-[family-name:var(--font-heading)] text-2xl text-[#560700]">
+                        {title}
+                      </h2>
+                      <p className="font-[family-name:var(--font-body)] text-xs text-gray-600">
+                        Status: {reg ? registrationStatusLabels[status] : "Not started"}
+                      </p>
+                    </div>
+                  </div>
 
-              <div className="space-y-4">
-                <p className="font-[family-name:var(--font-body)] text-gray-700">{body}</p>
+                  <div className="space-y-4">
+                    <p className="font-[family-name:var(--font-body)] text-gray-700">{body}</p>
 
-                {status === "draft" && registrationsOpen() && started && (
-                  <ul className="flex flex-wrap gap-2 font-[family-name:var(--font-body)] text-sm">
-                    {checklist.map(item => (
-                      <li
-                        key={item.label}
-                        className={`rounded-full px-3 py-1 ${item.done ? "bg-green-100 text-green-800" : "bg-[#FFE4B3]/60 text-[#560700]/80"}`}
+                    {status === "draft" && registrationsOpen() && started && (
+                      <ul className="flex flex-wrap gap-2 font-[family-name:var(--font-body)] text-sm">
+                        {checklist.map(item => (
+                          <li
+                            key={item.label}
+                            className={`rounded-full px-3 py-1 ${item.done ? "bg-green-100 text-green-800" : "bg-[#FFE4B3]/60 text-[#560700]/80"}`}
+                          >
+                            {item.done ? "✓" : "○"} {item.label}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    {status === "draft" && registrationsOpen() && (
+                      <Link
+                        href="/portal/onboarding"
+                        className="group w-full flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-[#560700] to-[#6b1003] text-white hover:from-[#6b1003] hover:to-[#560700] transition-all shadow-lg hover:shadow-xl"
                       >
-                        {item.done ? "✓" : "○"} {item.label}
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                        <span className="font-[family-name:var(--font-body)] font-semibold">{started ? "Continue application" : "Apply"}</span>
+                        <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </Link>
+                    )}
 
-                {status === "draft" && registrationsOpen() && (
-                  <Link
-                    href="/portal/onboarding"
-                    className="group w-full flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-[#560700] to-[#6b1003] text-white hover:from-[#6b1003] hover:to-[#560700] transition-all shadow-lg hover:shadow-xl"
-                  >
-                    <span className="font-[family-name:var(--font-body)] font-semibold">{started ? "Continue application" : "Apply"}</span>
-                    <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </Link>
-                )}
+                    {(status === "declined" || status === "rejected" || (status === "draft" && !registrationsOpen())) && (
+                      <Link
+                        href="/#mailing-list"
+                        className="inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-[#560700] bg-[#FFE4B3]/60 hover:bg-[#FFE4B3] transition-all font-[family-name:var(--font-body)]"
+                      >
+                        Join the mailing list for next year
+                      </Link>
+                    )}
 
-                {(status === "declined" || status === "rejected" || (status === "draft" && !registrationsOpen())) && (
-                  <Link
-                    href="/#mailing-list"
-                    className="inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-[#560700] bg-[#FFE4B3]/60 hover:bg-[#FFE4B3] transition-all font-[family-name:var(--font-body)]"
-                  >
-                    Join the mailing list for next year
-                  </Link>
-                )}
+                    {status === "accepted" && !rsvpOverdue && (
+                      <RsvpButtons status="accepted" discordUsername={profile?.discord_username ?? null} />
+                    )}
 
-                {status === "accepted" && !rsvpOverdue && (
-                  <RsvpButtons status="accepted" discordUsername={profile?.discord_username ?? null} />
-                )}
+                    {status === "confirmed" && (
+                      <>
+                        {profile?.discord_username && (
+                          <div className="p-4 rounded-xl bg-[#FFE4B3]/40">
+                            <p className="font-[family-name:var(--font-body)] text-gray-700 text-sm mb-1">Discord</p>
+                            <p className="font-[family-name:var(--font-body)] text-sm font-semibold text-[#560700]">
+                              {profile.discord_username}
+                            </p>
+                          </div>
+                        )}
+                        <RsvpButtons status="confirmed" discordUsername={profile?.discord_username ?? null} />
+                      </>
+                    )}
 
-                {status === "confirmed" && (
-                  <>
-                    {profile?.discord_username && (
+                    {reg?.resume_updated_at && status !== "draft" && (
                       <div className="p-4 rounded-xl bg-[#FFE4B3]/40">
-                        <p className="font-[family-name:var(--font-body)] text-gray-700 text-sm mb-1">Discord</p>
-                        <p className="font-[family-name:var(--font-body)] text-sm font-semibold text-[#560700]">
-                          {profile.discord_username}
+                        <p className="font-[family-name:var(--font-body)] text-gray-700 text-sm mb-1">Resume Updated</p>
+                        <p className="font-[family-name:var(--font-body)] text-sm font-medium text-[#560700]">
+                          {new Date(reg.resume_updated_at).toLocaleString()}
                         </p>
                       </div>
                     )}
-                    <RsvpButtons status="confirmed" discordUsername={profile?.discord_username ?? null} />
-                  </>
-                )}
-
-                {reg?.resume_updated_at && status !== "draft" && (
-                  <div className="p-4 rounded-xl bg-[#FFE4B3]/40">
-                    <p className="font-[family-name:var(--font-body)] text-gray-700 text-sm mb-1">Resume Updated</p>
-                    <p className="font-[family-name:var(--font-body)] text-sm font-medium text-[#560700]">
-                      {new Date(reg.resume_updated_at).toLocaleString()}
-                    </p>
                   </div>
-                )}
-              </div>
+                </>
+              )}
             </div>
           </div>
 

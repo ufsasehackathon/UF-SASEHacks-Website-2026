@@ -5,7 +5,7 @@ import { profileSchema, registrationFlagsSchema, responsesSchema, APPLICATION_QU
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { saveResume } from "@/lib/resume";
 import { statusEmail, sendEmailBatch } from "@/lib/email";
-import { registrationsOpen } from "@/lib/constants";
+import { registrationsOpen, walkInsOpen } from "@/lib/constants";
 
 /**
  * Create the caller's profile row if missing. The registration (application) row is only created
@@ -122,12 +122,9 @@ export async function upsertProfile(_: unknown, formData: FormData) {
   return { ok: true };
 }
 
-export async function saveRegistrationFlags(_: unknown, formData: FormData) {
-  const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: "Not authenticated" };
-
-  const values = {
+/** Consent checkboxes from a form: a box counts as checked only when its value is "on" */
+function consentsFromForm(formData: FormData) {
+  return {
     accuracy_agreement: formData.get("accuracy_agreement") === "on",
     terms_and_conditions: formData.get("terms_and_conditions") === "on",
     code_of_conduct: formData.get("code_of_conduct") === "on",
@@ -137,7 +134,14 @@ export async function saveRegistrationFlags(_: unknown, formData: FormData) {
     mlh_data_sharing: formData.get("mlh_data_sharing") === "on",
     mlh_communications: formData.get("mlh_communications") === "on",
   };
-  const parsed = registrationFlagsSchema.safeParse(values);
+}
+
+export async function saveRegistrationFlags(_: unknown, formData: FormData) {
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not authenticated" };
+
+  const parsed = registrationFlagsSchema.safeParse(consentsFromForm(formData));
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message || "You must accept all required agreements" };
   }
@@ -267,6 +271,59 @@ export async function rsvp(attending: boolean) {
   if (error) return { ok: false, error: error.message };
 
   await emailOwnStatus(user.id);
+
+  revalidatePath("/portal");
+  return { ok: true };
+}
+
+/**
+ * Walk-in at the event: makes sure there's a registration row (a draft for someone who never
+ * applied), fills in a missing name and saves the agreements, so staff can add them to the
+ * on-site waitlist (add_to_waitlist also needs Discord, which they link separately).
+ */
+export async function joinWalkIn(formData: FormData): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not authenticated" };
+
+  if (!walkInsOpen()) return { ok: false, error: "Walk-ins aren't open" };
+
+  await ensureRows({ withRegistration: true });
+
+  // Names are only asked for when the profile has none; never overwrite ones already saved
+  const sendsNames = formData.has("first_name") || formData.has("last_name");
+  const firstName = String(formData.get("first_name") ?? "").trim();
+  const lastName = String(formData.get("last_name") ?? "").trim();
+  if (sendsNames && (!firstName || !lastName)) return { ok: false, error: "Enter your first and last name" };
+
+  const parsed = registrationFlagsSchema.safeParse(consentsFromForm(formData));
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message || "You must accept all required agreements" };
+  }
+
+  if (sendsNames) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("first_name, last_name, full_name")
+      .eq("id", user.id)
+      .single();
+    const first = profile?.first_name || firstName;
+    const last = profile?.last_name || lastName;
+    const names: Record<string, string> = {};
+    if (!profile?.first_name) names.first_name = first;
+    if (!profile?.last_name) names.last_name = last;
+    if (!profile?.full_name) names.full_name = `${first} ${last}`;
+    if (Object.keys(names).length > 0) {
+      const { error } = await supabase.from("profiles").update(names).eq("id", user.id);
+      if (error) return { ok: false, error: error.message };
+    }
+  }
+
+  const { error } = await supabase
+    .from("registrations")
+    .update(parsed.data)
+    .eq("user_id", user.id);
+  if (error) return { ok: false, error: error.message };
 
   revalidatePath("/portal");
   return { ok: true };

@@ -18,6 +18,13 @@ vi.mock("@/lib/supabase/server", async () => (await import("../helpers/next")).n
 vi.mock("next/cache", async () => (await import("../helpers/next")).nextMocks.cache);
 vi.mock("next/navigation", async () => (await import("../helpers/next")).nextMocks.navigation);
 
+// The real event window is in the future, so joinWalkIn's window check is switched here
+let walkInsOpenFlag = true;
+vi.mock("@/lib/constants", async orig => ({
+  ...(await orig<typeof import("@/lib/constants")>()),
+  walkInsOpen: () => walkInsOpenFlag,
+}));
+
 const portal = await import("@/app/portal/actions");
 const resume = await import("@/app/portal/resume/actions");
 
@@ -52,6 +59,7 @@ describe("signed out", () => {
     ["saveResponses", () => portal.saveResponses(answersForm("hi"))],
     ["submitApplication", () => portal.submitApplication()],
     ["rsvp", () => portal.rsvp(true)],
+    ["joinWalkIn", () => portal.joinWalkIn(consentForm())],
     ["uploadResume", () => resume.uploadResume(fileForm(pdfFile()))],
   ] as const)("%s returns Not authenticated", async (_, call) => {
     actAs(null);
@@ -388,6 +396,8 @@ describe("submitApplication", () => {
   it("is blocked before reaching the database when registrations are switched off", async () => {
     vi.stubEnv("NEXT_PUBLIC_REGISTRATIONS_ENABLED", "false");
     vi.resetModules();
+    // resetModules keeps mocked modules cached, so drop the walkInsOpen mock to re-read the flag
+    vi.doUnmock("@/lib/constants");
     // Fresh module instances, including the mock helper, so sign in again on the new copy
     (await import("../helpers/next")).actAs(user);
     const fresh = await import("@/app/portal/actions");
@@ -432,5 +442,82 @@ describe("rsvp", () => {
     await portal.rsvp(false);
     expect(resend).toHaveBeenCalledTimes(2);
     expect((await getRegistration(user.id))?.last_emailed_status).toBe("declined");
+  });
+});
+
+describe("joinWalkIn", () => {
+  function walkInForm(names?: { first_name: string; last_name: string }, flags = {}) {
+    const fd = consentForm(flags);
+    if (names) {
+      fd.set("first_name", names.first_name);
+      fd.set("last_name", names.last_name);
+    }
+    return fd;
+  }
+
+  beforeEach(() => {
+    walkInsOpenFlag = true;
+  });
+
+  it("creates a draft registration with consents for a user with none", async () => {
+    const user = await createUser({ profile: false });
+    actAs(user);
+    const result = await portal.joinWalkIn(walkInForm({ first_name: "Ada", last_name: "Lovelace" }, { can_photograph: false }));
+    expect(result).toEqual({ ok: true });
+    expect(await getRegistration(user.id)).toMatchObject({
+      status: "draft",
+      accuracy_agreement: true,
+      terms_and_conditions: true,
+      code_of_conduct: true,
+      mlh_code_of_conduct: true,
+      mlh_data_sharing: true,
+      can_photograph: false,
+    });
+    expect(await getProfile(user.id)).toMatchObject({ first_name: "Ada", last_name: "Lovelace", full_name: "Ada Lovelace" });
+    expect(revalidatePath).toHaveBeenCalledWith("/portal");
+  });
+
+  it("saves names only when the profile has none", async () => {
+    const user = await createUser();
+    actAs(user);
+    expect(await portal.joinWalkIn(walkInForm({ first_name: "Ada", last_name: "Lovelace" }))).toEqual({ ok: true });
+    expect(await getProfile(user.id)).toMatchObject({ first_name: "Test", last_name: "Lovelace", full_name: "Test Lovelace" });
+  });
+
+  it("requires both names when the fields are sent", async () => {
+    const user = await createUser({ profile: false });
+    actAs(user);
+    expect(await portal.joinWalkIn(walkInForm({ first_name: "Ada", last_name: "  " })))
+      .toEqual({ ok: false, error: "Enter your first and last name" });
+    expect(await getProfile(user.id)).toMatchObject({ first_name: "", last_name: "" });
+    expect((await getRegistration(user.id))?.accuracy_agreement).toBe(false);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("rejects missing required consents", async () => {
+    const user = await createUser();
+    actAs(user);
+    expect(await portal.joinWalkIn(walkInForm(undefined, { code_of_conduct: false })))
+      .toEqual({ ok: false, error: "You must agree to the code of conduct" });
+    expect(await getRegistration(user.id)).toMatchObject({ status: "draft", accuracy_agreement: false });
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("works for a rejected applicant (consents already true, no names sent)", async () => {
+    const user = await createUser({ firstName: "Ada" });
+    await setRegistration(user.id, { status: "rejected", can_photograph: true });
+    actAs(user);
+    expect(await portal.joinWalkIn(walkInForm(undefined, { can_photograph: false }))).toEqual({ ok: true });
+    expect(await getRegistration(user.id)).toMatchObject({ status: "rejected", accuracy_agreement: true, can_photograph: false });
+    expect((await getProfile(user.id))?.first_name).toBe("Ada");
+  });
+
+  it("refuses outside the event window", async () => {
+    walkInsOpenFlag = false;
+    const user = await createUser();
+    actAs(user);
+    expect(await portal.joinWalkIn(walkInForm())).toEqual({ ok: false, error: "Walk-ins aren't open" });
+    expect(await getRegistration(user.id)).toBeUndefined();
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 });
