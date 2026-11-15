@@ -1354,8 +1354,8 @@ select pg_notify('pgrst', 'reload schema');
 -- ---------------------------------------------------------------------------
 -- Not executed automatically
 -- ---------------------------------------------------------------------------
--- Give someone a role (UUID from Dashboard > Authentication > Users). There's no role UI yet,
--- so this is how owners, staff and judges are set. Use 'owner', 'staff' or 'judge';
+-- Give someone a role (UUID from Dashboard > Authentication > Users). Owners can do this on the
+-- People tab (/staff/people), so this is only needed for the first owner. Use 'owner', 'staff' or 'judge';
 -- to make someone a hacker again, delete their user_roles row.
 --   insert into public.profiles (id, email, full_name)
 --   values ('PASTE_USER_ID', 'PASTE_EMAIL', 'PASTE_NAME') on conflict (id) do nothing;

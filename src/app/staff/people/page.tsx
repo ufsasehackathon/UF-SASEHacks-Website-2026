@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentRole } from "@/lib/session";
+import { listRoleHolders } from "./actions";
+import { RoleManager } from "@/components/staff/RoleManager";
 
 export const dynamic = "force-dynamic";
 
@@ -7,5 +9,5 @@ export const dynamic = "force-dynamic";
 export default async function StaffPeoplePage() {
   const { role } = await getCurrentRole();
   if (role !== "owner") redirect("/staff/applications");
-  return <p className="font-[family-name:var(--font-body)] text-[#560700]/70">Coming next.</p>;
+  return <RoleManager holders={await listRoleHolders()} />;
 }
