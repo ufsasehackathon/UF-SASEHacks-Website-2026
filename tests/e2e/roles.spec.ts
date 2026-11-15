@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { createUser, signIn } from "./support";
+import { createUser, signIn, sql } from "./support";
 import type { Role } from "@/lib/roles";
 import { ROLE_HOME } from "@/lib/roles";
 
@@ -12,9 +12,17 @@ const cases: { role: Role; landing: RegExp; allowed: string[]; blocked: string[]
   { role: "owner", landing: /\/staff\/applications$/, allowed: ["/staff/applications", "/staff/people", "/judge", "/portal"], blocked: [], title: "Owner Dashboard" },
 ];
 
+// judging.spec waits until the only judges are its own (assignment spreads over every judge),
+// so don't leave this file's judge behind
+const created: string[] = [];
+test.afterEach(async () => {
+  if (created.length) await sql(`delete from public.user_roles where role = 'judge' and user_id = any($1)`, [created.splice(0)]);
+});
+
 for (const { role, landing, allowed, blocked, title } of cases) {
   test(`${role}: dashboard link, allowed and blocked pages`, async ({ page, context, baseURL }) => {
     const user = await createUser({ role });
+    created.push(user.id);
     await signIn(context, user, baseURL!);
 
     await page.goto("/");
