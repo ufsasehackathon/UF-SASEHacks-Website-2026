@@ -67,6 +67,7 @@ The code is built and `npm run lint` / `npx tsc --noEmit` pass. An automated tes
 
 ## Known gaps / follow-ups
 
+- Staff tab switches take ~0.5–0.9 s on localhost against hosted Supabase: ~4 sequential round trips (middleware `getUser`, page `getUser`, `user_role` RPC, queries) at ~150 ms each from a laptop. On Vercel, set the function region to the Supabase project's region so each trip is a few ms. If it's still slow there, run the role lookup in parallel with the page queries (RLS already guards the data), or switch to `getClaims()` (local JWT check, needs the project's asymmetric signing keys).
 Found while writing the tests (not fixed; the tests check what the DB ends up with rather than locking these in):
 - `submit_application()` only checks `resume_url is not null`, and hackers can write `resume_url` directly through the API. Someone could submit without uploading a resume. Fix: guard `resume_url` (only `saveResume`'s path) or check `storage.objects` in the RPC.
 - Resumes are limited to 4 MB (was 10 MB): uploads go through server actions, whose body limit is now 4 MB (`next.config.ts`; Vercel caps bodies at ~4.5 MB, and the default 1 MB limit meant larger resumes never reached the server). `MAX_RESUME_BYTES` in `src/lib/resume.ts` is checked by `saveResume`, `ResumeUploader` and the onboarding form. Uploading straight to Storage from the browser would allow bigger files if needed.

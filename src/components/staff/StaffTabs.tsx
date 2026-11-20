@@ -1,7 +1,27 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
+
+/**
+ * Spinner on the clicked tab while its page loads. The old page stays up until the new one is ready
+ * (no loading.tsx: its Suspense fallback holds even fast pages back for ~300 ms or more).
+ */
+function TabLabel({ name }: { name: string }) {
+  const { pending } = useLinkStatus();
+  return (
+    <span className="inline-flex items-center gap-2">
+      {name}
+      {pending && (
+        <span
+          role="status"
+          aria-label={`Loading ${name}`}
+          className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
+        />
+      )}
+    </span>
+  );
+}
 
 /** Tab bar for /staff. People (role management) is owner-only. */
 export function StaffTabs({ isOwner }: { isOwner: boolean }) {
@@ -26,7 +46,7 @@ export function StaffTabs({ isOwner }: { isOwner: boolean }) {
               active ? "bg-[#560700] text-[#FFE4B3]" : "bg-white hover:bg-[#560700]/10"
             }`}
           >
-            {tab.name}
+            <TabLabel name={tab.name} />
           </Link>
         );
       })}
