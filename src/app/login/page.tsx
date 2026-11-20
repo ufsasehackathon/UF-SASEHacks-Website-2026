@@ -7,7 +7,8 @@ export const dynamic = "force-dynamic";
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
   const sp = await searchParams;
-  const next = sp?.next ?? "/portal";
+  // Without ?next= the auth callback picks the user's dashboard by role
+  const next = sp?.next;
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-[#560700] via-[#6b1003] to-[#4a0600]">

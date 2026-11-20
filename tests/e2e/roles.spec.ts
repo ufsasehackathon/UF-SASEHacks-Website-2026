@@ -36,9 +36,10 @@ for (const { role, landing, allowed, blocked, title } of cases) {
       await page.goto(p);
       await expect(page).toHaveURL(new RegExp(`${p}$`));
     }
+    // A page the role can't use bounces to the role's own dashboard
     for (const p of blocked) {
       await page.goto(p);
-      await expect(page).toHaveURL(/\/portal$/);
+      await expect(page).toHaveURL(landing);
     }
   });
 }

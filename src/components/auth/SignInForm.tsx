@@ -3,7 +3,13 @@
 import { useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
-export default function SignInForm({ next = "/portal" }: { next?: string }) {
+function callbackUrl(next?: string) {
+  const base = `${window.location.origin}/auth/callback`;
+  return next ? `${base}?next=${encodeURIComponent(next)}` : base;
+}
+
+/** `next` = where to land after login; omit it to land on the user's dashboard (picked by role in /auth/callback) */
+export default function SignInForm({ next }: { next?: string }) {
   const supabase = createSupabaseBrowserClient();
   const [loading, setLoading] = useState<"discord" | "email" | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -15,7 +21,7 @@ export default function SignInForm({ next = "/portal" }: { next?: string }) {
     setErr(null);
     setLoading(provider);
     try {
-      const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
+      const redirectTo = callbackUrl(next);
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: { redirectTo },
@@ -33,7 +39,7 @@ export default function SignInForm({ next = "/portal" }: { next?: string }) {
     setErr(null);
     setLoading("email");
     try {
-      const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
+      const redirectTo = callbackUrl(next);
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: { emailRedirectTo: redirectTo },

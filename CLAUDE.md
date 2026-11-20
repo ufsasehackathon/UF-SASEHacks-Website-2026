@@ -51,7 +51,7 @@ Four layers, all in `tests/`. CI (`.github/workflows/test.yml`) runs them on eve
 
 - `tests/unit/` — pure logic in `src/lib/` (validation, FAQ parser, email templates/sending with mocked `fetch`, `saveResume` with a fake client, `safeNextPath`, flags/deadline, search helpers, applicant state/filters, check-in state/search filter/ET time formatters, Devpost CSV parser, judge assignment planner).
 - `tests/db/` — guards, RLS per table × role, storage policies, every RPC. Each test signs in real users with JWTs (anon key), so RLS and guards apply.
-- `tests/actions/` — server actions called directly, with `@/lib/supabase/server`, `next/cache` and `next/navigation` mocked (`tests/helpers/next.ts`; `actAs(user)` picks the caller). `session.test.ts` covers `requireRole` the same way. Resend is mocked by `mockResend()` (also in `tests/helpers/next.ts`), which routes `api.resend.com` calls to a `vi.fn`.
+- `tests/actions/` — server actions called directly, with `@/lib/supabase/server`, `next/cache` and `next/navigation` mocked (`tests/helpers/next.ts`; `actAs(user)` picks the caller). `session.test.ts` covers `requireRole` the same way, and `authCallback.test.ts` the `/auth/callback` route handler (role-based landing). Resend is mocked by `mockResend()` (also in `tests/helpers/next.ts`), which routes `api.resend.com` calls to a `vi.fn`.
 - `tests/e2e/` — Playwright against two `next dev` servers: port 3100 with both flags on, 3101 with both off (`flags-off.spec.ts`). They build into `.next-e2e*` (`NEXT_DIST_DIR`, read by `next.config.ts`) so they don't clobber `npm run dev`. Sessions are injected as Supabase auth cookies (`signIn` in `tests/e2e/support.ts`); one test does the real magic link via Mailpit. Files they upload live in `tests/fixtures/`. "Assign judges" spreads work over every judge in the database, so specs that create judges remove their judge roles in `afterEach` (`judging.spec.ts` waits until only its own judges exist).
 
 How the test database works:
@@ -86,15 +86,15 @@ The full database schema (tables, functions, triggers, RLS, storage bucket + pol
 
 ### Auth & session refresh
 
-Login is Discord-first: `SignInForm` offers "Continue with Discord" (Supabase OAuth) plus a secondary email magic link (for applicants without Discord, and staff/judges). Google/GitHub were removed. Discord is required later, at RSVP: an accepted hacker who signed in by email links Discord from the portal via `supabase.auth.linkIdentity` (requires manual identity linking enabled in Supabase Auth settings). `ensureRows()` calls the `sync_discord_profile()` RPC on every portal visit to copy the linked identity onto `profiles.discord_id`/`discord_username`. `/auth/callback` only redirects to same-site `next` paths (`safeNextPath` in `src/lib/safeNext.ts`).
+Login is Discord-first: `SignInForm` offers "Continue with Discord" (Supabase OAuth) plus a secondary email magic link (for applicants without Discord, and staff/judges). Google/GitHub were removed. Discord is required later, at RSVP: an accepted hacker who signed in by email links Discord from the portal via `supabase.auth.linkIdentity` (requires manual identity linking enabled in Supabase Auth settings). `ensureRows()` calls the `sync_discord_profile()` RPC on every portal visit to copy the linked identity onto `profiles.discord_id`/`discord_username`. `/auth/callback` only redirects to same-site `next` paths (`safeNextPath` in `src/lib/safeNext.ts`); with no usable `next` it sends the user to their role's dashboard (`ROLE_HOME`, looked up with the new session), so owners/staff land on `/staff` and judges on `/judge`. `/login` and `SignInForm` pass `next` through only when the URL has one (no `/portal` default), and the portal layout sends signed-out visitors to plain `/login` for the same reason.
 
 Supabase dashboard config (not in code): Discord provider enabled, Site URL/redirect URLs, and Resend as custom SMTP so magic-link emails aren't limited by Supabase's built-in mailer (these count against the Resend quota).
 
 `middleware.ts` runs on every request except `_next/static`, `_next/image`, `favicon.ico`, and `api/faq`, and calls `supabase.auth.getUser()` purely to refresh the session cookie. Actual route protection is NOT done in middleware — it's done per-layout:
 
-- `src/app/portal/layout.tsx` — redirects to `/login` if unauthenticated.
-- `src/app/staff/layout.tsx` — owner or staff, else `/portal`. `/staff/people` also redirects non-owners to `/staff/applications`.
-- `src/app/judge/layout.tsx` — judge or owner, else `/portal`.
+- `src/app/portal/layout.tsx` — redirects to `/login` (no `next`) if unauthenticated.
+- `src/app/staff/layout.tsx` — owner or staff (signed out → `/login?next=/staff`), else the role's own dashboard (`ROLE_HOME`). `/staff/people` also redirects non-owners to `/staff/applications`.
+- `src/app/judge/layout.tsx` — judge or owner (signed out → `/login?next=/judge`), else the role's own dashboard.
 
 Every server action must re-check the caller's role itself (defense in depth): staff/owner actions start with `requireRole(STAFF_ROLES)` or `requireRole(OWNER_ROLES)` from `src/lib/session.ts` and return its `error` on `ok: false`. Don't assume the layout check is sufficient when adding new actions/routes.
 

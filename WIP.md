@@ -29,11 +29,12 @@ The code is built and `npm run lint` / `npx tsc --noEmit` pass. An automated tes
 - [ ] Vercel: set both to `true` for **Preview** (dev branch) and leave them unset/`false` for **Production**. Redeploy after changing them.
 
 ## 2. Test checklist
-**Covered by the automated suite** (tick once CI is green): every DB guard (`status`, `review_score`, `discord_id`, `responses` after submit, locked profile, staff as non-admin), RLS for every table and role, resume storage policies, every RPC (`submit_application` deadline/consents/resume, `rsvp` Discord/deadline/statuses, `set_user_role`, check-in, decisions, waitlist), all portal and staff server actions (review/Send decisions with mocked Resend, check-in, judging, people, `joinWalkIn`), and in the browser: the Applications, Check-in, Judging and People tabs, the judge's project list, magic-link login → Dashboard → Apply card, blank-form errors, full application with resume upload, "Continue application" checklist, status cards, RSVP with Discord linked → confirm → drop out, overdue RSVP, locked profile, role-based routing and Dashboard links, flags-off state, signed-out redirects.
+**Covered by the automated suite** (tick once CI is green): every DB guard (`status`, `review_score`, `discord_id`, `responses` after submit, locked profile, staff as non-admin), RLS for every table and role, resume storage policies, every RPC (`submit_application` deadline/consents/resume, `rsvp` Discord/deadline/statuses, `set_user_role`, check-in, decisions, waitlist), all portal and staff server actions (review/Send decisions with mocked Resend, check-in, judging, people, `joinWalkIn`), and in the browser: the Applications, Check-in, Judging and People tabs, the judge's project list, magic-link login → Dashboard → Apply card, login with no `?next=` landing on each role's dashboard (`/auth/callback`), blank-form errors, full application with resume upload, "Continue application" checklist, status cards, RSVP with Discord linked → confirm → drop out, overdue RSVP, locked profile, role-based routing and Dashboard links, flags-off state, signed-out redirects.
 - [ ] All of the above green in CI
 
 **Still manual** (can't be automated against the local stack):
 - [ ] Real Discord OAuth: Discord-login user can confirm straight away and `discord_username` is set; email user can "Connect Discord" (needs manual identity linking enabled in the hosted project)
+- [ ] Log in as an owner/staff and a judge from the header's Login link: you should land on `/staff/applications` / `/judge`, not `/portal`
 - [ ] Magic-link login works through Resend SMTP, and the "application received" / RSVP emails arrive from Resend
 - [ ] Account created before the schema update → portal shows Apply, not "Application received" (depends on hosted data)
 - [ ] Vercel Preview and Production flag values behave as expected
@@ -65,6 +66,7 @@ The code is built and `npm run lint` / `npx tsc --noEmit` pass. An automated tes
 - [ ] Production Supabase: run `schema.sql`, set up providers, SMTP and redirect URLs
 
 ## Known gaps / follow-ups
+
 Found while writing the tests (not fixed; the tests check what the DB ends up with rather than locking these in):
 - `submit_application()` only checks `resume_url is not null`, and hackers can write `resume_url` directly through the API. Someone could submit without uploading a resume. Fix: guard `resume_url` (only `saveResume`'s path) or check `storage.objects` in the RPC.
 - Resumes are limited to 4 MB (was 10 MB): uploads go through server actions, whose body limit is now 4 MB (`next.config.ts`; Vercel caps bodies at ~4.5 MB, and the default 1 MB limit meant larger resumes never reached the server). `MAX_RESUME_BYTES` in `src/lib/resume.ts` is checked by `saveResume`, `ResumeUploader` and the onboarding form. Uploading straight to Storage from the browser would allow bigger files if needed.

@@ -5,7 +5,8 @@ export default async function PortalLayout({ children }: { children: React.React
     const supabase = await createSupabaseServerClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-        redirect(`/login?next=${encodeURIComponent("/portal")}`);
+        // No ?next=: after login the callback sends each role to its own dashboard (hackers to /portal)
+        redirect("/login");
     }
     return <>{children}</>;
 }
